@@ -1,12 +1,13 @@
 # AbsensiPro — Demo Absensi, Persetujuan & Payroll (Expo + TypeScript)
 
 Aplikasi mobile multi-role (Owner, Admin/HRD, Karyawan) untuk presensi, pengajuan cuti/izin/sakit/resign,
-persetujuan dua tahap, dan rekap payroll. **Seluruh data adalah mock di memori aplikasi** — tidak ada
-backend, API eksternal, GPS asli, kamera asli, atau PDF resmi.
+persetujuan dua tahap, dan rekap payroll. Saat ini aplikasi berjalan dengan **data mock di memori**,
+sementara **backend Laravel 13 + MySQL 8 sudah tersedia** di repo terpisah `absensi-api`
+(lihat bagian [Backend Laravel](#backend-laravel--mysql)). GPS, kamera, dan PDF masih simulasi di UI.
 
 ## Menjalankan di Windows
 
-Prasyarat: Node.js 20+ dan npm.
+Prasyarat: **Node.js 22.13+** (dibutuhkan Expo SDK 58) dan npm.
 
 ```powershell
 npm.cmd install
@@ -103,20 +104,48 @@ src/
   utils/                    tanggal, format Rupiah, payroll, validasi
 ```
 
+## Backend Laravel + MySQL
+
+Backend ada di folder saudara `D:\MY PROJECT\opencode\absensi-api` (Laravel 13, MySQL 8/Laragon,
+Sanctum token, 48 endpoint `/api/v1`, 50 test lulus). Ringkasan:
+
+```powershell
+cd D:\MY PROJECT\opencode\absensi-api
+php artisan migrate:fresh --seed
+php artisan serve --host=0.0.0.0 --port=8000
+```
+
+Lalu di aplikasi ini:
+
+```powershell
+copy .env.example .env     # sesuaikan EXPO_PUBLIC_API_URL
+npm.cmd start
+```
+
+Klien API siap pakai ada di `src/api/`:
+
+- `src/api/client.ts` — `request()`, `setAuthToken()`, `ApiError` (pesan validasi siap tampil).
+- `src/api/index.ts` — `api.login`, `api.me`, `api.checkIn`, `api.submissions`,
+  `api.decideSubmission`, `api.payroll`, `api.finalizePayroll`, dan lainnya.
+
+Pemetaan URL: emulator Android `http://10.0.2.2:8000/api/v1`, simulator iOS
+`http://127.0.0.1:8000/api/v1`, perangkat fisik `http://<IP-LAN>:8000/api/v1`.
+
+Dokumentasi kontrak lengkap: `absensi-api/docs/API.md`.
+
 ## Batasan (penting)
 
-- Data hanya tersimpan di memori; restart aplikasi mengembalikan seed awal.
-- GPS, kamera/selfie, lampiran, dan cetak surat adalah **simulasi** (tidak ada izin native, bukan
-  anti fake-GPS, bukan verifikasi biometrik).
-- Bukan PDF resmi, tidak ada QR/tanda tangan digital.
-- Autentikasi demo menyimpan password sebagai teks biasa; jangan dipakai di produksi.
-- Satu perusahaan (single tenant) pada data demo; model data sudah memiliki `companyId`.
+- `AppProvider` masih memakai seed mock; lapisan `src/api/` sudah tersedia tetapi belum
+  menggantikan store. Migrasi store adalah langkah berikutnya.
+- Token disimpan di memori proses; untuk produksi gunakan `expo-secure-store`.
+- GPS, kamera/selfie, lampiran, dan cetak surat masih **simulasi** di UI.
+- Surat dari API baru berupa payload siap-render (belum PDF final + QR image).
+- Push notification belum dikirim (tabel `device_tokens` sudah disiapkan di backend).
 
-## Langkah lanjutan backend/native
+## Langkah lanjutan
 
-- Backend + database (mis. PostgreSQL) dengan autentikasi JWT, refresh token, dan RBAC per `companyId`.
-- Penyimpanan file (selfie, surat dokter) di object storage dengan signed URL.
-- Validasi geofence di server + deteksi mock location (native) dan kebijakan privasi lokasi.
-- PDF resmi (mis. server-side PDF) + QR verifikasi + audit trail persetujuan.
-- Payroll finalisasi, payslip, integrasi transfer bank/pajak/BPJS.
-- Push notification antrean persetujuan dan pengingat absensi.
+1. Migrasi `AppProvider` ke `src/api/` (auth → absensi → pengajuan → payroll), mulai dari login.
+2. Ganti data mock bertahap sambil mempertahankan 31 layar yang ada.
+3. Token aman (`expo-secure-store`) + penanganan 401 otomatis.
+4. Kamera & GPS asli: `expo-location`, `expo-camera`, `expo-image-manipulator` (kompresi sebelum upload).
+5. PDF surat resmi + QR, lalu push notification antrean persetujuan.
