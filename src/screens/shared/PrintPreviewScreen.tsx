@@ -1,7 +1,9 @@
 import { RouteProp, useRoute } from '@react-navigation/native';
 import { Building2, Info, Printer, ShieldAlert } from 'lucide-react-native';
-import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import React, { useState } from 'react';
+import { Platform, StyleSheet, View } from 'react-native';
+import { downloadAsync, cacheDirectory } from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { AppText } from '../../components/common/AppText';
 import { Badge } from '../../components/common/Badge';
 import { Button } from '../../components/common/Button';
@@ -9,6 +11,8 @@ import { InfoNote } from '../../components/common/Feedback';
 import { ScreenHeader } from '../../components/common/Header';
 import { Screen } from '../../components/common/Screen';
 import { useToast } from '../../components/common/Toast';
+import { API_BASE_URL } from '../../api/client';
+import { loadToken } from '../../api/tokenStore';
 import {
   LEAVE_CATEGORY_LABEL,
   SUBMISSION_TYPE_LABEL,
@@ -30,6 +34,7 @@ export function PrintPreviewScreen() {
   const navigation = useAppNavigation();
   const { showToast } = useToast();
   const { submissions, getUser, getRoleForUser, company } = useApp();
+  const [isPrinting, setIsPrinting] = useState(false);
 
   const submission = submissions.find((item) => item.id === route.params.submissionId);
   const employee = getUser(submission?.userId);
@@ -47,16 +52,47 @@ export function PrintPreviewScreen() {
   const hrdStep = submission.approvals.find((step) => step.stage === 'HRD');
   const ownerStep = submission.approvals.find((step) => step.stage === 'OWNER');
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     if (!canPrint) {
       showToast('Surat belum dapat dicetak sebelum disetujui penuh.', 'warning');
       return;
     }
-    showToast(
-      'Pratinjau dokumen siap. Generator PDF/QR belum tersedia.',
-      'info',
-      'Aksi cetak belum tersedia',
-    );
+
+    if (Platform.OS === 'web') {
+      showToast('Buka aplikasi di perangkat mobile untuk mencetak surat.', 'info', 'Hanya di native');
+      return;
+    }
+
+    setIsPrinting(true);
+
+    try {
+      const token = await loadToken();
+      const fileName = `surat-${String(submission.code).replace(/[^\w.-]/g, '_')}.pdf`;
+      const target = `${cacheDirectory ?? ''}${fileName}`;
+      const url = `${API_BASE_URL}/submissions/${submission.id}/letter/pdf`;
+
+      const result = await downloadAsync(url, target, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (result.status !== 200) {
+        showToast('Gagal membuat surat dari server.', 'error', 'Gagal mencetak');
+        return;
+      }
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(result.uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Bagikan surat pengajuan',
+        });
+      } else {
+        showToast('Surat tersimpan di perangkat.', 'success', 'Surat tersimpan');
+      }
+    } catch {
+      showToast('Gagal membuat surat dari server.', 'error', 'Gagal mencetak');
+    } finally {
+      setIsPrinting(false);
+    }
   };
 
   return (
@@ -68,7 +104,14 @@ export function PrintPreviewScreen() {
           onBack={() => navigation.goBack()}
         />
       }
-      footer={<Button label="Cetak / simpan" icon={Printer} onPress={handlePrint} disabled={!canPrint} />}
+      footer={
+        <Button
+          label={isPrinting ? 'Membuat surat…' : 'Cetak / simpan'}
+          icon={Printer}
+          onPress={handlePrint}
+          disabled={!canPrint || isPrinting}
+        />
+      }
     >
       {!canPrint ? (
         <InfoNote
@@ -154,9 +197,9 @@ export function PrintPreviewScreen() {
       <InfoNote
         style={{ marginTop: spacing.md }}
         icon={Info}
-        tone="warning"
-        title="Belum ada PDF resmi atau QR verifikasi"
-        body="Pratinjau ini hanya menampilkan tata letak surat. Generator PDF, tanda tangan digital, dan QR verifikasi perlu dikerjakan pada fase berikutnya."
+        tone="info"
+        title="Surat resmi dibuat di server"
+        body="Dokumen PDF disusun dari data server, berisi nomor surat, ringkasan approval, dan QR verifikasi. Keaslian dapat diperiksa lewat QR pada surat."
       />
       <Button
         label="Kembali ke detail pengajuan"
@@ -246,3 +289,4 @@ const styles = StyleSheet.create({
   docFooter: { marginTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
   docFooterText: { fontSize: 8.5, color: colors.textMuted, textAlign: 'center' },
 });
+

@@ -14,8 +14,8 @@ Tanggal laporan: 2026-11-03 (sesi integrasi backend + penyempurnaan UI).
 | Backend API (Laravel + MySQL) | **Lengkap & teruji** | 51 test / 153 assertion lulus (`absensi-api`). |
 | Frontend Expo → API | **Terintegrasi** | `src/api/*`, `src/store/AppProvider.tsx`, `src/api/mappers.ts`, `src/api/tokenStore.ts` aktif. |
 | Absensi (GPS + selfie + geofence) | **Terintegrasi** | `expo-location` + `expo-image-picker`; validasi geofence di server; mock location ditolak. |
-| Payroll | **Sebagian** | Layar payroll masih menghitung di sisi aplikasi; server punya endpoint payroll. |
-| Dokumen/PDF/QR | **Belum** | Payload surat API ada; PDF final + QR image belum. |
+| Payroll | **Terintegrasi** | Layar payroll (rekap/detail/dashboard) sekarang memakai data payroll server; breakdown komponen masih ditampilkan dari baris server. |
+| Dokumen/PDF/QR | **Selesai** | PDF surat resmi + QR verifikasi publik (`letters/verify/{token}`); tombol cetak di layar "Pratinjau surat" mengunduh PDF dari server. |
 | Push notification | **Belum** | Tabel `device_tokens` sudah disiapkan backend. |
 | Verifikasi biometrik/liveness | **Belum** | Foto selfie disimpan di server, tanpa pencocokan wajah. |
 
@@ -69,8 +69,8 @@ jarak (haversine) → validasi radius → simpan + audit log → status LATE + d
 | 1. Backend + kontrak | Laravel API, DB, test, dokumentasi | **Selesai** (51 test lulus) |
 | 2. Klien mobile + store | `src/api/*`, AppProvider API-backed, token aman, mappers | **Selesai** |
 | 3. Bukti absensi fisik | GPS + selfie + geofence + mock detection | **Selesai** (inti server) |
-| 4. Payroll konsolidasi | Pindah perhitungan payroll ke server | **Perlu** |
-| 5. Dokumen & notifikasi | PDF + QR + FCM/APNs | **Perlu** |
+| 4. Payroll konsolidasi | Pindah perhitungan payroll ke server | **Selesai** |
+| 5. Dokumen & notifikasi | PDF + QR + FCM/APNs | **PDF + QR selesai**; FCM/APNs menunggu kredensial. |
 | 6. Produksi | CI, deploy backend, rate limit, audit, monitoring | **Perlu** |
 
 ---
