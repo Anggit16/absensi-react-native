@@ -142,8 +142,8 @@ Dokumentasi kontrak lengkap: `D:\MY PROJECT\opencode\absensi-api\docs\API.md`.
 
 ## Batasan (penting)
 
-- Payroll masih dihitung di sisi aplikasi (`src/utils/payroll.ts`) dari data yang dimuat dari API;
-  endpoint payroll server sudah tersedia tetapi belum dipakai layar payroll.
+- Payroll: layar utama, detail, dan ringkasan dashboard sekarang memakai endpoint server
+  (`api.payroll`); breakdown komponen masih menampilkan perhitungan dari baris server.
 - Surat dari API berupa payload siap-render; generator PDF final + QR image belum ada.
 - Push notification belum dikirim (tabel `device_tokens` sudah disiapkan di backend).
 - Verifikasi biometrik/liveness selfie belum ada (foto disimpan di server, bukan dicocokkan).

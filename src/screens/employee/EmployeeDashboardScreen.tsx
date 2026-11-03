@@ -10,7 +10,7 @@ import {
   ScanFace,
   Timer,
 } from 'lucide-react-native';
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { AppText } from '../../components/common/AppText';
 import { Avatar } from '../../components/common/Avatar';
@@ -29,13 +29,13 @@ import { useApp, useSessionUser } from '../../store/AppProvider';
 import { colors, radius, spacing } from '../../theme';
 import { currentPeriod, formatDateLong, formatDayName, todayISO } from '../../utils/date';
 import { formatCurrency } from '../../utils/format';
-import { computePayrollRow, summaryFromAttendance } from '../../utils/payroll';
+import { summaryFromAttendance } from '../../utils/payroll';
 import { useAppNavigation } from '../../navigation/types';
 
 export function EmployeeDashboardScreen() {
   const user = useSessionUser();
   const navigation = useAppNavigation();
-  const { company, attendances, submissions, getRoleForUser, getLocationForUser, getBalance } =
+  const { company, attendances, submissions, getRoleForUser, getLocationForUser, getBalance, payroll, fetchPayroll } =
     useApp();
 
   const today = todayISO();
@@ -72,17 +72,11 @@ export function EmployeeDashboardScreen() {
     ['PENDING_HRD', 'PENDING_OWNER'].includes(submission.status),
   ).length;
 
-  const payroll = useMemo(() => {
-    if (!role) return undefined;
-    return computePayrollRow({
-      user,
-      role,
-      attendances,
-      submissions,
-      company,
-      period,
-    });
-  }, [attendances, company, period, role, submissions, user]);
+  const myPayrollRow = payroll?.rows[0];
+
+  useEffect(() => {
+    void fetchPayroll(period);
+  }, [fetchPayroll, period]);
 
   const remaining = balance ? balance.totalQuota - balance.used : 0;
   const usagePercent = balance?.totalQuota
@@ -255,10 +249,10 @@ export function EmployeeDashboardScreen() {
           <View style={{ flex: 1 }}>
             <AppText variant="caption">PROYEKSI GAJI BULAN INI</AppText>
             <AppText variant="numberLg" color={colors.accentDark}>
-              {formatCurrency(payroll?.grossEarned ?? 0)}
+              {formatCurrency(myPayrollRow?.grossEarned ?? 0)}
             </AppText>
             <AppText variant="caption">
-              {payroll?.presentDays ?? 0} hari hadir · {payroll?.lateMinutes ?? 0} menit terlambat
+              {myPayrollRow?.presentDays ?? 0} hari hadir · {myPayrollRow?.lateMinutes ?? 0} menit terlambat
             </AppText>
           </View>
           <View style={styles.payrollIcon}>

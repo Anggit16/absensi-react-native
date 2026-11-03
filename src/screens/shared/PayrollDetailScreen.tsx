@@ -1,6 +1,6 @@
 import { RouteProp, useRoute } from '@react-navigation/native';
 import { CalendarDays, Info } from 'lucide-react-native';
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { AppText } from '../../components/common/AppText';
 import { Avatar } from '../../components/common/Avatar';
@@ -14,7 +14,7 @@ import { useApp } from '../../store/AppProvider';
 import { colors, spacing } from '../../theme';
 import { formatDate, formatPeriod, formatPeriodRange, periodBounds } from '../../utils/date';
 import { formatCurrency } from '../../utils/format';
-import { computeHrdPayrollRow, computePayrollRow } from '../../utils/payroll';
+import type { PayrollRow } from '../../types';
 import { PayrollBreakdown } from './PayrollScreen';
 import { useAppNavigation, AppParamList } from '../../navigation/types';
 
@@ -22,23 +22,19 @@ export function PayrollDetailScreen() {
   const route = useRoute<RouteProp<AppParamList, 'PayrollDetail'>>();
   const navigation = useAppNavigation();
   const { userId, period } = route.params;
-  const { getUser, getRoleForUser, getCompensation, attendances, submissions, company, getLocationForUser } = useApp();
+  const { getUser, attendances, fetchPayroll, payroll, getLocationForUser } = useApp();
 
   const user = getUser(userId);
-  const role = getRoleForUser(user);
-  const compensation = getCompensation(userId);
   const location = getLocationForUser(user);
 
-  const row = useMemo(() => {
-    if (!user) return undefined;
-    if (user.role === 'HRD' && compensation) {
-      return computeHrdPayrollRow(user, compensation, company, period);
-    }
-    if (role) {
-      return computePayrollRow({ user, role, attendances, submissions, company, period });
-    }
-    return undefined;
-  }, [attendances, company, compensation, period, role, submissions, user]);
+  const row = useMemo<PayrollRow | undefined>(
+    () => payroll?.rows.find((item) => item.userId === userId),
+    [payroll, userId],
+  );
+
+  useEffect(() => {
+    void fetchPayroll(period);
+  }, [fetchPayroll, period]);
 
   const records = useMemo(() => {
     const bounds = periodBounds(period);

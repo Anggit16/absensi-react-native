@@ -12,9 +12,11 @@ import type {
   JobRole,
   LeaveBalance,
   OfficeLocation,
+  PayrollRow,
   Submission,
   User,
 } from '../types';
+import type { PayrollSummary } from '../utils/payroll';
 import type {
   AttendanceRecord,
   AuthUser,
@@ -22,6 +24,8 @@ import type {
   JobRoleRecord,
   LeaveBalanceRecord,
   OfficeLocationRecord,
+  PayrollRowRecord,
+  PayrollSummaryRecord,
   SubmissionRecord,
 } from './index';
 
@@ -189,6 +193,55 @@ export function mapSubmission(record: SubmissionRecord): Submission {
 /** Urutkan pengajuan terbaru lebih dulu. */
 export function sortSubmissions(items: Submission[]): Submission[] {
   return [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/** Ubah baris respons payroll server menjadi tipe domain aplikasi. */
+export function mapPayrollRow(record: PayrollRowRecord): PayrollRow {
+  return {
+    userId: record.userId,
+    name: record.name,
+    employeeCode: record.employeeCode,
+    roleName: record.roleName,
+    kind: record.kind,
+    status: record.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
+    period: record.period,
+    presentDays: record.presentDays,
+    onTimeDays: record.onTimeDays,
+    lateDays: record.lateDays,
+    absentDays: record.absentDays,
+    lateMinutes: record.lateMinutes,
+    dailyBaseSalary: record.dailyBaseSalary,
+    monthlyBaseSalary: record.monthlyBaseSalary,
+    transportPerDay: record.transportPerDay,
+    mealPerDay: record.mealPerDay,
+    transportTotal: record.transportTotal,
+    mealTotal: record.mealTotal,
+    fixedAllowance: record.fixedAllowance,
+    otherDeduction: record.otherDeduction,
+    lateDeduction: record.lateDeduction,
+    unpaidLeaveDays: record.unpaidLeaveDays,
+    unpaidLeaveDeduction: record.unpaidLeaveDeduction,
+    permissionDays: record.permissionDays,
+    permissionDeduction: record.permissionDeduction,
+    grossEarned: record.grossEarned,
+    projectedGross: record.projectedGross,
+    workDaysPerMonth: record.workDaysPerMonth,
+  };
+}
+
+/** Ubah ringkasan respons payroll server menjadi tipe domain aplikasi. */
+export function mapPayrollSummary(record: PayrollSummaryRecord): PayrollSummary {
+  return {
+    total: record.total,
+    projectedTotal: record.projectedTotal,
+    employeeTotal: record.employeeTotal,
+    hrdTotal: record.hrdTotal,
+    transportTotal: record.transportTotal,
+    mealTotal: record.mealTotal,
+    lateDeductionTotal: record.lateDeductionTotal,
+    presentDays: record.presentDays,
+    headcount: record.headcount,
+  };
 }
 
 /** Urutkan absensi tanggal terbaru lebih dulu. */

@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, Coins, Info, Percent, Wallet } from 'lucide-react-native';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { AppText } from '../../components/common/AppText';
 import { Avatar } from '../../components/common/Avatar';
@@ -18,16 +18,27 @@ import { PAYROLL_RULES, ROLE_LABEL } from '../../constants';
 import { useApp, useSessionUser } from '../../store/AppProvider';
 import { colors, radius, spacing } from '../../theme';
 import type { PayrollRow } from '../../types';
+import type { PayrollSummary } from '../../utils/payroll';
 import { currentPeriod, formatPeriod, formatPeriodRange, shiftPeriod } from '../../utils/date';
 import { formatCurrency } from '../../utils/format';
-import { computeHrdPayrollRow, computePayrollRow, summarizePayroll } from '../../utils/payroll';
 import { useAppNavigation } from '../../navigation/types';
+
+const EMPTY_PAYROLL_SUMMARY: PayrollSummary = {
+  total: 0,
+  projectedTotal: 0,
+  employeeTotal: 0,
+  hrdTotal: 0,
+  transportTotal: 0,
+  mealTotal: 0,
+  lateDeductionTotal: 0,
+  presentDays: 0,
+  headcount: 0,
+};
 
 export function PayrollScreen({ showBack = false }: { showBack?: boolean }) {
   const user = useSessionUser();
   const navigation = useAppNavigation();
-  const { users, company, attendances, submissions, getRoleForUser, getCompensation, getLocationForUser } =
-    useApp();
+  const { fetchPayroll, payroll, getRoleForUser, getLocationForUser } = useApp();
 
   const [period, setPeriod] = useState(currentPeriod());
   const [filter, setFilter] = useState<'ALL' | 'EMPLOYEE' | 'HRD'>('ALL');
@@ -37,60 +48,37 @@ export function PayrollScreen({ showBack = false }: { showBack?: boolean }) {
   const isEmployee = user.role === 'EMPLOYEE';
   const canFilter = !isEmployee;
 
-  const rows = useMemo<PayrollRow[]>(() => {
-    const employeeRows = users
-      .filter((item) => item.role === 'EMPLOYEE' && item.status === 'ACTIVE')
-      .map((item) => {
-        const role = getRoleForUser(item);
-        if (!role) return null;
-        return computePayrollRow({
-          user: item,
-          role,
-          attendances,
-          submissions,
-          company,
-          period,
-        });
-      })
-      .filter((row): row is PayrollRow => Boolean(row));
+  useEffect(() => {
+    void fetchPayroll(period);
+  }, [fetchPayroll, period]);
 
-    const hrdRows = users
-      .filter((item) => item.role === 'HRD' && item.status === 'ACTIVE')
-      .map((item) => {
-        const compensation = getCompensation(item.id);
-        if (!compensation) return null;
-        return computeHrdPayrollRow(item, compensation, company, period);
-      })
-      .filter((row): row is PayrollRow => Boolean(row));
+  const rows = useMemo<PayrollRow[]>(() => {
+    const source =
+      payroll?.scope === 'self' ? payroll.rows.filter((row) => row.userId === user.id) : payroll?.rows ?? [];
+
+    const employeeRows = source
+      .filter((row) => row.kind === 'EMPLOYEE' && row.status === 'ACTIVE')
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const hrdRows = source
+      .filter((row) => row.kind === 'HRD' && row.status === 'ACTIVE')
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     if (isEmployee) {
-      return employeeRows.filter((row) => row.userId === user.id);
+      return employeeRows;
     }
 
     const combined = filter === 'EMPLOYEE' ? employeeRows : filter === 'HRD' ? hrdRows : [...employeeRows, ...hrdRows];
+
     return combined
       .filter((row) =>
         search.trim()
           ? row.name.toLowerCase().includes(search.trim().toLowerCase()) ||
             row.employeeCode.toLowerCase().includes(search.trim().toLowerCase())
           : true,
-      )
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [
-    attendances,
-    company,
-    filter,
-    getCompensation,
-    getRoleForUser,
-    isEmployee,
-    period,
-    search,
-    submissions,
-    user.id,
-    users,
-  ]);
+      );
+  }, [filter, isEmployee, payroll, search, user.id]);
 
-  const summary = useMemo(() => summarizePayroll(rows), [rows]);
+  const summary = useMemo<PayrollSummary>(() => payroll?.summary ?? EMPTY_PAYROLL_SUMMARY, [payroll]);
   const myRow = isEmployee ? rows[0] : undefined;
   const myRole = getRoleForUser(user);
   const myLocation = getLocationForUser(user);
@@ -259,7 +247,7 @@ export function PayrollScreen({ showBack = false }: { showBack?: boolean }) {
           <SectionHeader title="Daftar payroll" subtitle="Ketuk baris untuk melihat rincian" />
           <SegmentedTabs
             options={[
-              { value: 'ALL', label: 'Semua', count: users.filter((item) => item.status === 'ACTIVE' && item.role !== 'OWNER').length },
+              { value: 'ALL', label: 'Semua', count: summary.headcount },
               { value: 'EMPLOYEE', label: 'Karyawan' },
               { value: 'HRD', label: 'HRD' },
             ]}

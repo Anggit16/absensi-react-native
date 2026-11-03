@@ -10,7 +10,7 @@ import {
   UserRound,
   Users,
 } from 'lucide-react-native';
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { AppText } from '../../components/common/AppText';
 import { Avatar } from '../../components/common/Avatar';
@@ -25,11 +25,10 @@ import { QuickActions } from '../../components/dashboard/QuickActions';
 import { SubmissionCard } from '../../components/submissions/SubmissionCard';
 import { LEAVE_POLICY_RULES } from '../../constants';
 import { useApp, useSessionUser } from '../../store/AppProvider';
-import type { PayrollRow } from '../../types';
 import { colors, radius, spacing } from '../../theme';
 import { currentPeriod, formatDateLong, formatPeriod, todayISO } from '../../utils/date';
 import { formatCompactCurrency, formatCurrency } from '../../utils/format';
-import { computeHrdPayrollRow, computePayrollRow, summarizePayroll, summaryFromAttendance } from '../../utils/payroll';
+import { summaryFromAttendance } from '../../utils/payroll';
 import { useAppNavigation } from '../../navigation/types';
 
 export function OwnerDashboardScreen() {
@@ -43,12 +42,17 @@ export function OwnerDashboardScreen() {
     attendances,
     submissions,
     getRoleForUser,
-    getCompensation,
     leaveBalances,
+    payroll,
+    fetchPayroll,
   } = useApp();
 
   const today = todayISO();
   const period = currentPeriod();
+
+  useEffect(() => {
+    void fetchPayroll(period);
+  }, [fetchPayroll, period]);
 
   const activeEmployees = useMemo(
     () => users.filter((item) => item.role === 'EMPLOYEE' && item.status === 'ACTIVE'),
@@ -79,25 +83,17 @@ export function OwnerDashboardScreen() {
     [period, submissions],
   );
 
-  const payrollSummary = useMemo(() => {
-    const employeeRows = activeEmployees
-      .map((employee) => {
-        const role = getRoleForUser(employee);
-        if (!role) return null;
-        return computePayrollRow({ user: employee, role, attendances, submissions, company, period });
-      })
-      .filter((row): row is PayrollRow => Boolean(row));
-
-    const hrdRows = users
-      .filter((item) => item.role === 'HRD' && item.status === 'ACTIVE')
-      .map((item) => {
-        const compensation = getCompensation(item.id);
-        return compensation ? computeHrdPayrollRow(item, compensation, company, period) : null;
-      })
-      .filter((row): row is PayrollRow => Boolean(row));
-
-    return summarizePayroll([...employeeRows, ...hrdRows]);
-  }, [activeEmployees, attendances, company, getCompensation, getRoleForUser, period, submissions, users]);
+  const payrollSummary = payroll?.summary ?? {
+    total: 0,
+    projectedTotal: 0,
+    employeeTotal: 0,
+    hrdTotal: 0,
+    transportTotal: 0,
+    mealTotal: 0,
+    lateDeductionTotal: 0,
+    presentDays: 0,
+    headcount: 0,
+  };
 
   const attendanceRate = activeEmployees.length
     ? Math.round(((summary.onTime + summary.late) / activeEmployees.length) * 100)

@@ -20,6 +20,8 @@ import {
   mapJobRole,
   mapLeaveBalance,
   mapLocation,
+  mapPayrollRow,
+  mapPayrollSummary,
   mapSubmission,
   mapUser,
   sortAttendances,
@@ -35,18 +37,30 @@ import type {
   LeaveBalance,
   LeaveCategory,
   OfficeLocation,
+  PayrollRow,
   Submission,
   SubmissionType,
   User,
   UserRole,
   WorkspaceData,
 } from '../types';
+import type { PayrollSummary } from '../utils/payroll';
 
 export interface ActionResult {
   ok: boolean;
   message: string;
   /** ID entitas terkait, dipakai mis. untuk membuka detail setelah membuat pengajuan. */
   id?: string;
+}
+
+/** Snapshot payroll dari server untuk satu periode. */
+export interface PayrollState {
+  period: string;
+  status: 'DRAFT' | 'FINAL';
+  scope: 'company' | 'self';
+  rows: PayrollRow[];
+  summary: PayrollSummary;
+  finalizedAt: string | null;
 }
 
 export interface SubmitAttendanceInput {
@@ -167,6 +181,11 @@ interface AppContextValue extends WorkspaceData {
   getLocationForUser: (user?: User) => OfficeLocation | undefined;
   getBalance: (userId?: string) => LeaveBalance | undefined;
   getCompensation: (userId?: string) => HrdCompensation | undefined;
+  /** Snapshot payroll terbaru dari server untuk periode aktif. */
+  payroll: PayrollState | null;
+  isLoadingPayroll: boolean;
+  fetchPayroll: (period?: string) => Promise<ActionResult>;
+  finalizePayroll: (period: string) => Promise<ActionResult>;
   isEmailTaken: (email: string, excludeUserId?: string) => boolean;
   isUsernameTaken: (username: string, excludeUserId?: string) => boolean;
 }
@@ -281,6 +300,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [isRestoring, setIsRestoring] = useState(true);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [payroll, setPayroll] = useState<PayrollState | null>(null);
+  const [isLoadingPayroll, setIsLoadingPayroll] = useState(false);
 
   const sessionUser = useMemo(
     () => (session ? data.users.find((user) => user.id === session.id) ?? null : null),
@@ -436,6 +457,62 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       clearSession();
     })();
   }, [clearSession]);
+
+  const fetchPayroll = useCallback(
+    async (period?: string): Promise<ActionResult> => {
+      if (!session) {
+        return { ok: false, message: 'Sesi tidak aktif. Silakan login kembali.' };
+      }
+
+      setIsLoadingPayroll(true);
+
+      try {
+        const report = await api.payroll(period);
+        setPayroll({
+          period: report.period,
+          status: report.status,
+          scope: report.scope,
+          rows: report.rows.map(mapPayrollRow),
+          summary: mapPayrollSummary(report.summary),
+          finalizedAt: report.finalizedAt,
+        });
+
+        return { ok: true, message: 'Payroll periode berhasil dimuat dari server.' };
+      } catch (error) {
+        return { ok: false, message: describeError(error) };
+      } finally {
+        setIsLoadingPayroll(false);
+      }
+    },
+    [session],
+  );
+
+  const finalizePayroll = useCallback(
+    async (period: string): Promise<ActionResult> => {
+      if (!session) {
+        return { ok: false, message: 'Sesi tidak aktif. Silakan login kembali.' };
+      }
+
+      try {
+        const response = await api.finalizePayroll(period);
+        const report = await api.payroll(period);
+
+        setPayroll({
+          period: report.period,
+          status: report.status,
+          scope: report.scope,
+          rows: report.rows.map(mapPayrollRow),
+          summary: mapPayrollSummary(report.summary),
+          finalizedAt: report.finalizedAt,
+        });
+
+        return { ok: true, message: response.message ?? 'Payroll periode berhasil difinalisasi.' };
+      } catch (error) {
+        return { ok: false, message: describeError(error) };
+      }
+    },
+    [session],
+  );
 
   const reloadWorkspace = useCallback(async (): Promise<void> => {
     if (!session) return;
@@ -970,6 +1047,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       getLocationForUser,
       getBalance,
       getCompensation,
+      payroll,
+      isLoadingPayroll,
+      fetchPayroll,
+      finalizePayroll,
       isEmailTaken,
       isUsernameTaken,
     }),
@@ -1005,6 +1086,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       getLocationForUser,
       getBalance,
       getCompensation,
+      payroll,
+      isLoadingPayroll,
+      fetchPayroll,
+      finalizePayroll,
       isEmailTaken,
       isUsernameTaken,
     ],
