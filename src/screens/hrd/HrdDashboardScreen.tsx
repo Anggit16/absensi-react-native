@@ -282,7 +282,7 @@ export function HrdDashboardScreen() {
         icon={ScanFace}
         tone="neutral"
         title={`${roles.length} role · ${locations.length} titik lokasi`}
-        body="Semua data berasal dari mock state yang sama. Setelah Anda memverifikasi pengajuan, pengajuan langsung muncul di daftar Owner bila disetujui."
+        body="Semua data berasal dari server yang sama. Setelah Anda memverifikasi pengajuan, pengajuan langsung muncul di daftar Owner bila disetujui."
       />
     </Screen>
   );

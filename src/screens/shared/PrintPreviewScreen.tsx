@@ -53,9 +53,9 @@ export function PrintPreviewScreen() {
       return;
     }
     showToast(
-      'Simulasi cetak: pratinjau dokumen siap. Generator PDF/QR belum tersedia pada fase frontend.',
+      'Pratinjau dokumen siap. Generator PDF/QR belum tersedia.',
       'info',
-      'Aksi cetak disimulasikan',
+      'Aksi cetak belum tersedia',
     );
   };
 
@@ -68,7 +68,7 @@ export function PrintPreviewScreen() {
           onBack={() => navigation.goBack()}
         />
       }
-      footer={<Button label="Cetak / simpan (simulasi)" icon={Printer} onPress={handlePrint} disabled={!canPrint} />}
+      footer={<Button label="Cetak / simpan" icon={Printer} onPress={handlePrint} disabled={!canPrint} />}
     >
       {!canPrint ? (
         <InfoNote
@@ -98,7 +98,7 @@ export function PrintPreviewScreen() {
         <View style={styles.line} />
 
         <View style={styles.docBadge}>
-          <Badge label="DOKUMEN SIMULASI" tone="warning" />
+          <Badge label="PRATINJAU DOKUMEN" tone="warning" />
         </View>
 
         <AppText style={styles.docTitle}>{DOC_TITLE[submission.type]}</AppText>
@@ -126,7 +126,7 @@ export function PrintPreviewScreen() {
 
         <AppText style={styles.paragraph}>
           Demikian surat ini dibuat berdasarkan data absensi dan pengajuan pada aplikasi. Surat ini
-          merupakan hasil simulasi frontend dan belum menjadi dokumen resmi perusahaan.
+          merupakan pratinjau dan belum menjadi dokumen resmi perusahaan.
         </AppText>
 
         <View style={styles.signatureRow}>
@@ -146,7 +146,7 @@ export function PrintPreviewScreen() {
 
         <View style={styles.docFooter}>
           <AppText style={styles.docFooterText}>
-            Dicetak dari AbsensiPro · {formatDate(new Date().toISOString().slice(0, 10))} · data simulasi
+            Dicetak dari AbsensiPro · {formatDate(new Date().toISOString().slice(0, 10))} · data server
           </AppText>
         </View>
       </View>
@@ -156,7 +156,7 @@ export function PrintPreviewScreen() {
         icon={Info}
         tone="warning"
         title="Belum ada PDF resmi atau QR verifikasi"
-        body="Pratinjau ini hanya mensimulasikan tata letak surat. Generator PDF, tanda tangan digital, dan QR verifikasi perlu dikerjakan pada fase berikutnya."
+        body="Pratinjau ini hanya menampilkan tata letak surat. Generator PDF, tanda tangan digital, dan QR verifikasi perlu dikerjakan pada fase berikutnya."
       />
       <Button
         label="Kembali ke detail pengajuan"

@@ -4,15 +4,14 @@ import React, { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { AppText } from '../../components/common/AppText';
 import { Avatar } from '../../components/common/Avatar';
-import { Badge } from '../../components/common/Badge';
+import { Badge , AttendanceStatusBadge } from '../../components/common/Badge';
 import { Card } from '../../components/common/Card';
-import { AttendanceStatusBadge } from '../../components/common/Badge';
 import { EmptyState, InfoNote } from '../../components/common/Feedback';
 import { ScreenHeader } from '../../components/common/Header';
 import { Screen } from '../../components/common/Screen';
 import { DetailRow, Divider, SectionHeader } from '../../components/common/Section';
 import { useApp } from '../../store/AppProvider';
-import { colors, radius, spacing } from '../../theme';
+import { colors, spacing } from '../../theme';
 import { formatDate, formatPeriod, formatPeriodRange, periodBounds } from '../../utils/date';
 import { formatCurrency } from '../../utils/format';
 import { computeHrdPayrollRow, computePayrollRow } from '../../utils/payroll';
@@ -81,14 +80,14 @@ export function PayrollDetailScreen() {
       </Card>
 
       <Card tone="dark" style={styles.hero}>
-        <AppText style={styles.heroEyebrow}>TOTAL PAYROLL (SIMULASI)</AppText>
+        <AppText style={styles.heroEyebrow}>TOTAL PAYROLL</AppText>
         <AppText style={styles.heroValue}>{formatCurrency(row.grossEarned)}</AppText>
         <AppText style={styles.heroHint}>
           Proyeksi penuh: {formatCurrency(row.projectedGross)} · {row.presentDays} hari hadir
         </AppText>
       </Card>
 
-      <SectionHeader title="Rincian komponen" subtitle="Perhitungan demo berdasarkan absensi & role" />
+      <SectionHeader title="Rincian komponen" subtitle="Perhitungan berdasarkan absensi & role" />
       <Card>
         <PayrollBreakdown row={row} />
       </Card>
@@ -141,7 +140,7 @@ export function PayrollDetailScreen() {
           style={{ marginTop: spacing.md }}
           icon={Info}
           tone="neutral"
-          body="Staf HRD menerima gaji bulanan tetap sehingga tidak dihitung dari absensi harian pada simulasi ini."
+          body="Staf HRD menerima gaji bulanan tetap sehingga tidak dihitung dari absensi harian."
         />
       )}
 
@@ -150,7 +149,7 @@ export function PayrollDetailScreen() {
         icon={Info}
         tone="warning"
         title="Bukan slip gaji resmi"
-        body="Rincian ini adalah simulasi frontend. Belum ada pajak, BPJS, lembur, atau komponen resmi lain dari tim payroll."
+        body="Belum ada pajak, BPJS, lembur, atau komponen resmi lain dari tim payroll."
       />
     </Screen>
   );

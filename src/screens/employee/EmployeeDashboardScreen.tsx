@@ -1,5 +1,4 @@
 import {
-  ArrowRight,
   CalendarCheck,
   CalendarDays,
   CheckCircle2,
@@ -7,13 +6,12 @@ import {
   Clock3,
   Fingerprint,
   Info,
-  LogOut,
   MapPin,
   ScanFace,
   Timer,
 } from 'lucide-react-native';
 import React, { useMemo } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { AppText } from '../../components/common/AppText';
 import { Avatar } from '../../components/common/Avatar';
 import { Badge } from '../../components/common/Badge';
@@ -255,7 +253,7 @@ export function EmployeeDashboardScreen() {
       <Card>
         <View style={styles.rowBetween}>
           <View style={{ flex: 1 }}>
-            <AppText variant="caption">AKUMULASI GAJI (SIMULASI)</AppText>
+            <AppText variant="caption">PROYEKSI GAJI BULAN INI</AppText>
             <AppText variant="numberLg" color={colors.accentDark}>
               {formatCurrency(payroll?.grossEarned ?? 0)}
             </AppText>
@@ -276,7 +274,7 @@ export function EmployeeDashboardScreen() {
         />
       </Card>
 
-      <SectionHeader title="Aturan cuti" subtitle="Dipakai pada pengajuan & payroll demo" />
+      <SectionHeader title="Aturan cuti" subtitle="Dipakai pada pengajuan & rekap payroll" />
       <Card style={styles.policyCard}>
         {LEAVE_POLICY_RULES.slice(0, 4).map((rule) => (
           <View key={rule.title} style={styles.policyRow}>
@@ -296,10 +294,10 @@ export function EmployeeDashboardScreen() {
         icon={MapPin}
         tone="neutral"
         title={`Lokasi kerja: ${location?.name ?? 'belum diatur'}`}
-        body={`Radius geofencing demo ${location?.radiusMeters ?? 0} m. Absensi memakai simulasi GPS & selfie, bukan verifikasi perangkat asli.`}
+        body={`Radius lokasi geofencing ${location?.radiusMeters ?? 0} m. Absensi memakai GPS perangkat dan kamera selfie; jarak divalidasi ulang di server.`}
       />
       <AppText variant="caption" align="center" style={styles.footnote}>
-        {company.name} · {formatDayName(today)} · data simulasi
+        {company.name} · {formatDayName(today)} · data server
       </AppText>
     </Screen>
   );

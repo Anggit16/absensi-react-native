@@ -40,6 +40,7 @@ export const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, '') ?? DEFAULT_BASE_URL;
 
 let authToken: string | null = null;
+let unauthorizedHandler: (() => void) | null = null;
 
 export function setAuthToken(token: string | null): void {
   authToken = token;
@@ -47,6 +48,11 @@ export function setAuthToken(token: string | null): void {
 
 export function getAuthToken(): string | null {
   return authToken;
+}
+
+/** Dipanggil sekali oleh store untuk menangani 401 (token kedaluwarsa). */
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler;
 }
 
 type Query = Record<string, string | number | boolean | null | undefined>;
@@ -108,6 +114,10 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   });
 
   const payload = await parseBody(response);
+
+  if (response.status === 401) {
+    unauthorizedHandler?.();
+  }
 
   if (!response.ok) {
     throw new ApiError(

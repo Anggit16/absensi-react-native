@@ -114,7 +114,7 @@ export function MenuScreen() {
               },
               {
                 label: 'Lokasi Kerja',
-                description: `${locations.length} titik geofencing demo`,
+                description: `${locations.length} titik lokasi geofencing`,
                 icon: MapPin,
                 onPress: () => navigation.navigate('LocationList'),
               },
@@ -155,7 +155,7 @@ export function MenuScreen() {
       <InfoNote
         icon={Info}
         tone="neutral"
-        body="Seluruh modul di bawah ini memakai data mock yang sama. Perubahan langsung terlihat di dashboard, monitoring, dan payroll."
+        body="Seluruh modul memakai data server yang sama. Perubahan langsung terlihat di dashboard, monitoring, dan payroll."
       />
 
       {groups.map((group) => (

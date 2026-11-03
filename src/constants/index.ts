@@ -160,7 +160,7 @@ export const LEAVE_POLICY_RULES = [
   },
   {
     title: 'Izin Pribadi',
-    body: 'Tidak mengurangi kuota tahunan. Potongan mengikuti kebijakan durasi izin (demo: gaji pokok harian per hari izin).',
+    body: 'Tidak mengurangi kuota tahunan. Potongan mengikuti kebijakan durasi izin (gaji pokok harian per hari izin).',
   },
   {
     title: 'Cuti Khusus',
@@ -168,11 +168,11 @@ export const LEAVE_POLICY_RULES = [
   },
 ] as const;
 
-export const DEMO_PAYROLL_RULES = [
-  'Gaji pokok harian = gaji pokok ÷ 22 hari kerja (asumsi demo perusahaan).',
+export const PAYROLL_RULES = [
+  'Gaji pokok harian = gaji pokok ÷ 22 hari kerja (asumsi perusahaan).',
   'Tunjangan transportasi dan makan dihitung per hari hadir.',
   'Denda keterlambatan = menit terlambat × denda per menit pada role.',
-  'Cuti tanpa gaji memotong gaji pokok harian; izin pribadi memotong gaji pokok harian per hari (asumsi demo).',
+  'Cuti tanpa gaji memotong gaji pokok harian; izin pribadi memotong gaji pokok harian per hari.',
   'Proyeksi bulanan mengasumsikan seluruh 22 hari kerja dihadiri.',
 ] as const;
 

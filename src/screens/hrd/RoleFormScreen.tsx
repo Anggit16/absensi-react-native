@@ -1,5 +1,5 @@
 import { RouteProp, useRoute } from '@react-navigation/native';
-import { Briefcase, Clock3, Info, Save, Trash2 } from 'lucide-react-native';
+import { Clock3, Info, Save, Trash2 } from 'lucide-react-native';
 import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { AccessDenied } from '../../components/common/AccessDenied';
@@ -29,7 +29,7 @@ export function RoleFormScreen() {
   const navigation = useAppNavigation();
   const user = useSessionUser();
   const { showToast } = useToast();
-  const { roles, locations, users, getRole, saveRole, deleteRole } = useApp();
+  const { locations, users, getRole, saveRole, deleteRole } = useApp();
 
   const editing = getRole(route.params?.roleId);
   const isEdit = Boolean(editing);
@@ -70,7 +70,7 @@ export function RoleFormScreen() {
     setErrors((previous) => ({ ...previous, [key]: '' }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const nextErrors: Record<string, string> = {};
     if (form.name.trim().length < 3) nextErrors.name = 'Nama role minimal 3 karakter.';
     if (!isValidTime(form.checkInTime)) nextErrors.checkInTime = 'Format jam masuk HH:mm (contoh 08:00).';
@@ -91,7 +91,7 @@ export function RoleFormScreen() {
       return;
     }
 
-    const result = saveRole({
+    const result = await saveRole({
       id: editing?.id,
       name: form.name,
       department: form.department,
@@ -137,7 +137,7 @@ export function RoleFormScreen() {
               {isEdit ? 'Perubahan berlaku untuk semua karyawan dengan role ini' : 'Role baru untuk master data'}
             </AppText>
             <AppText variant="caption" style={{ lineHeight: 16 }}>
-              Jam kerja menentukan status tepat waktu/terlambat. Komponen gaji dipakai pada rekap payroll demo.
+              Jam kerja menentukan status tepat waktu/terlambat. Komponen gaji dipakai pada rekap rekap payroll.
             </AppText>
           </View>
         </View>
@@ -216,7 +216,7 @@ export function RoleFormScreen() {
         />
       </Card>
 
-      <SectionHeader title="Komponen gaji" subtitle="Simulasi payroll" />
+      <SectionHeader title="Komponen gaji" subtitle="Dasar perhitungan payroll" />
       <Card style={styles.formCard}>
         <SelectField
           label="Basis gaji"
@@ -327,12 +327,12 @@ export function RoleFormScreen() {
       <ConfirmDialog
         visible={confirmDelete}
         title="Hapus role?"
-        message={`Role ${editing?.name ?? ''} akan dihapus permanen dari mock state.`}
+        message={`Role ${editing?.name ?? ''} akan dihapus permanen dari server.`}
         confirmLabel="Ya, hapus"
         tone="danger"
-        onConfirm={() => {
+        onConfirm={async () => {
           if (!editing) return;
-          const result = deleteRole(editing.id);
+          const result = await deleteRole(editing.id);
           setConfirmDelete(false);
           if (result.ok) {
             showToast(result.message, 'success');

@@ -7,7 +7,6 @@ import {
   MapPin,
   Pencil,
   Phone,
-  RotateCcw,
   ScanFace,
   ShieldCheck,
   UserCog,
@@ -25,8 +24,7 @@ import { IconButton, ScreenHeader } from '../../components/common/Header';
 import { ConfirmDialog } from '../../components/common/Modal';
 import { Screen } from '../../components/common/Screen';
 import { Divider, SectionHeader } from '../../components/common/Section';
-import { useToast } from '../../components/common/Toast';
-import { DEMO_ACCOUNTS, EMPLOYMENT_TYPE_LABEL, ROLE_LABEL } from '../../constants';
+import { EMPLOYMENT_TYPE_LABEL, ROLE_LABEL } from '../../constants';
 import { useApp, useSessionUser } from '../../store/AppProvider';
 import { colors, radius, spacing } from '../../theme';
 import { formatDate, todayISO } from '../../utils/date';
@@ -35,11 +33,9 @@ import { useAppNavigation } from '../../navigation/types';
 export function ProfileScreen() {
   const user = useSessionUser();
   const navigation = useAppNavigation();
-  const { showToast } = useToast();
-  const { company, getRoleForUser, getLocationForUser, getBalance, logout, switchDemoAccount, resetDemoData, submissions, users } =
+  const { company, getRoleForUser, getLocationForUser, getBalance, logout, submissions, users } =
     useApp();
   const [confirmLogout, setConfirmLogout] = useState(false);
-  const [confirmReset, setConfirmReset] = useState(false);
 
   const role = getRoleForUser(user);
   const location = getLocationForUser(user);
@@ -111,16 +107,6 @@ export function ProfileScreen() {
             },
           ];
 
-  const handleSwitch = (roleKey: 'owner' | 'hrd' | 'employee') => {
-    const result = switchDemoAccount(roleKey);
-    if (result.ok) {
-      navigation.reset({ index: 0, routes: [{ name: 'Main' }] });
-      showToast(result.message, 'success', 'Akun demo diganti');
-    } else {
-      showToast(result.message, 'error');
-    }
-  };
-
   return (
     <Screen
       header={
@@ -175,7 +161,7 @@ export function ProfileScreen() {
           <View style={styles.rowBetween}>
             <View>
               <AppText variant="subtitle">Kuota cuti {balance.year}</AppText>
-              <AppText variant="caption">Tahun berjalan · data demo</AppText>
+              <AppText variant="caption">Tahun berjalan</AppText>
             </View>
             <AppText variant="numberLg" color={colors.accentDark}>
               {remaining}
@@ -228,48 +214,12 @@ export function ProfileScreen() {
         </Card>
       </View>
 
-      <SectionHeader title="Akun demo" subtitle="Uji seluruh role tanpa menghapus data project." />
+      <SectionHeader title="Akun" subtitle="Sesi dan keamanan aplikasi." />
       <Card style={styles.demoCard}>
         <InfoNote
           icon={ShieldCheck}
           tone="neutral"
-          body="Perpindahan akun hanya mengganti sesi, bukan menghapus data. Seluruh perubahan mock tetap tersimpan selama aplikasi berjalan."
-        />
-        {DEMO_ACCOUNTS.map((account) => {
-          const active = account.role === user.role;
-          return (
-            <Pressable
-              key={account.key}
-              onPress={() => handleSwitch(account.key)}
-              disabled={active}
-              accessibilityRole="button"
-              accessibilityLabel={`Ganti ke akun ${account.label}`}
-              style={({ pressed }) => [
-                styles.demoRow,
-                active && styles.demoRowActive,
-                { opacity: pressed ? 0.7 : 1 },
-              ]}
-            >
-              <View style={styles.demoText}>
-                <AppText variant="bodyStrong">{account.label}</AppText>
-                <AppText variant="caption" numberOfLines={1}>
-                  {account.email}
-                </AppText>
-              </View>
-              {active ? (
-                <AppText style={styles.activeLabel}>Sedang aktif</AppText>
-              ) : (
-                <ChevronRight size={16} color={colors.textMuted} strokeWidth={2} />
-              )}
-            </Pressable>
-          );
-        })}
-        <Button
-          label="Reset data demo"
-          variant="secondary"
-          size="sm"
-          icon={RotateCcw}
-          onPress={() => setConfirmReset(true)}
+          body="Sesi disimpan dengan token Bearer di penyimpanan aman perangkat. Keluar akan mencabut token di server."
         />
         <Button
           label="Keluar dari akun"
@@ -279,14 +229,14 @@ export function ProfileScreen() {
           style={{ borderColor: colors.dangerSoft }}
         />
         <AppText variant="caption" align="center">
-          AbsensiPro v1.0 · frontend demo · {todayISO()} · tanpa backend
+          AbsensiPro v1.0 · API Laravel · {todayISO()}
         </AppText>
       </Card>
 
       <ConfirmDialog
         visible={confirmLogout}
         title="Keluar dari akun?"
-        message="Anda akan kembali ke halaman login. Data mock pada sesi ini tetap tersimpan sampai aplikasi ditutup."
+        message="Token sesi akan dicabut dan Anda kembali ke halaman login."
         confirmLabel="Ya, keluar"
         tone="danger"
         onConfirm={() => {
@@ -294,19 +244,6 @@ export function ProfileScreen() {
           logout();
         }}
         onCancel={() => setConfirmLogout(false)}
-      />
-      <ConfirmDialog
-        visible={confirmReset}
-        title="Reset data demo?"
-        message="Seluruh perubahan yang Anda buat (karyawan, absensi, pengajuan, payroll) akan dikembalikan ke data awal."
-        confirmLabel="Reset sekarang"
-        tone="warning"
-        onConfirm={() => {
-          resetDemoData();
-          setConfirmReset(false);
-          showToast('Data demo dikembalikan ke kondisi awal.', 'success');
-        }}
-        onCancel={() => setConfirmReset(false)}
       />
     </Screen>
   );

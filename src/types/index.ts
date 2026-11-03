@@ -1,5 +1,5 @@
 /**
- * Tipe domain aplikasi AbsensiPro (fase frontend / mock data).
+ * Tipe domain aplikasi AbsensiPro. Nilai berasal dari API Laravel.
  * Struktur dibuat menyerupai kontrak API agar mudah diganti dengan backend.
  */
 
@@ -80,8 +80,6 @@ export interface User {
   name: string;
   email: string;
   username: string;
-  /** Demo only: password disimpan plaintext pada mock state. */
-  password: string;
   role: UserRole;
   employeeCode: string;
   jobRoleId?: string;
@@ -114,6 +112,8 @@ export interface Attendance {
   date: string; // YYYY-MM-DD
   checkInAt?: string; // HH:mm
   checkOutAt?: string; // HH:mm
+  checkOutDistanceMeters?: number;
+  checkOutSelfieCaptured?: boolean;
   status: AttendanceStatus;
   lateMinutes: number;
   locationId?: string;
@@ -121,7 +121,7 @@ export interface Attendance {
   latitude?: number;
   longitude?: number;
   distanceMeters?: number;
-  /** true = foto selfie simulasi tersimpan, bukan verifikasi biometrik. */
+  /** true = foto selfie absensi tersimpan di server (bukan verifikasi biometrik). */
   selfieCaptured?: boolean;
   note?: string;
 }
@@ -176,7 +176,7 @@ export interface Submission {
   cancelledAt?: string;
 }
 
-/** Baris rekap payroll hasil perhitungan demo. */
+/** Baris rekap payroll hasil perhitungan aplikasi dari data absensi server. */
 export interface PayrollRow {
   userId: string;
   name: string;
@@ -214,6 +214,18 @@ export interface AttendanceSummary {
   absent: number;
   onLeave: number;
   total: number;
+}
+
+/** Kumpulan data yang disinkronkan dari API untuk seluruh layar. */
+export interface WorkspaceData {
+  company: Company;
+  users: User[];
+  roles: JobRole[];
+  locations: OfficeLocation[];
+  attendances: Attendance[];
+  leaveBalances: LeaveBalance[];
+  submissions: Submission[];
+  hrdCompensations: HrdCompensation[];
 }
 
 export interface DemoAccount {

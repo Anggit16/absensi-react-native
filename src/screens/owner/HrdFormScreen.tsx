@@ -15,7 +15,7 @@ import { SectionHeader } from '../../components/common/Section';
 import { SelectField } from '../../components/common/SelectField';
 import { TextField } from '../../components/common/TextField';
 import { useToast } from '../../components/common/Toast';
-import { demoHelper, useApp, useSessionUser } from '../../store/AppProvider';
+import { formHelper, useApp, useSessionUser } from '../../store/AppProvider';
 import { colors, spacing } from '../../theme';
 import { ACCOUNT_STATUS_LABEL, EMPLOYMENT_TYPE_LABEL } from '../../constants';
 import { todayISO } from '../../utils/date';
@@ -66,7 +66,7 @@ export function HrdFormScreen() {
     setErrors((previous) => ({ ...previous, [key]: '' }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const nextErrors: Record<string, string> = {};
     if (form.name.trim().length < 3) nextErrors.name = 'Nama minimal 3 karakter.';
     if (!isValidEmail(form.email)) nextErrors.email = 'Format email tidak valid.';
@@ -80,7 +80,7 @@ export function HrdFormScreen() {
       return;
     }
 
-    const result = saveUser({
+    const result = await saveUser({
       id: editing?.id,
       name: form.name,
       email: form.email,
@@ -262,7 +262,7 @@ export function HrdFormScreen() {
         style={{ marginTop: spacing.md }}
         icon={ShieldCheck}
         tone="warning"
-        body={`Password disimpan sebagai teks biasa pada mock state (demo). ${isEdit ? 'Perubahan password langsung berlaku.' : `Kode otomatis berikutnya: ${demoHelper.nextEmployeeCode(users, new Date().getFullYear())}`}`}
+        body={`Password disimpan ter-hash di server dan tidak pernah ditampilkan kembali. ${isEdit ? 'Perubahan password langsung berlaku.' : `Kode otomatis berikutnya: ${formHelper.nextEmployeeCode(users, new Date().getFullYear())}`}`}
       />
     </Screen>
   );

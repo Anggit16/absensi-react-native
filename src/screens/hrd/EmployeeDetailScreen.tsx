@@ -1,9 +1,6 @@
 import { RouteProp, useRoute } from '@react-navigation/native';
 import {
   Briefcase,
-  CalendarCheck,
-  CalendarDays,
-  ChevronRight,
   ClipboardList,
   Mail,
   MapPin,
@@ -13,8 +10,8 @@ import {
   UserCog,
   Wallet,
 } from 'lucide-react-native';
-import React, { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import React, { useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { AppText } from '../../components/common/AppText';
 import { Avatar } from '../../components/common/Avatar';
 import { AccountStatusBadge, Badge, RoleBadge } from '../../components/common/Badge';
@@ -29,12 +26,8 @@ import { useToast } from '../../components/common/Toast';
 import { AttendanceRow } from '../../components/attendance/AttendanceRow';
 import { SubmissionCard } from '../../components/submissions/SubmissionCard';
 import { useApp, useSessionUser } from '../../store/AppProvider';
-import { colors, radius, spacing } from '../../theme';
-import {
-  EMPLOYMENT_TYPE_LABEL,
-  LEAVE_CATEGORY_LABEL,
-  SUBMISSION_STATUS_DESCRIPTION,
-} from '../../constants';
+import { colors, spacing } from '../../theme';
+import { EMPLOYMENT_TYPE_LABEL } from '../../constants';
 import { formatDate, todayISO } from '../../utils/date';
 import { useAppNavigation, AppParamList } from '../../navigation/types';
 
@@ -56,22 +49,14 @@ export function EmployeeDetailScreen() {
 
   const canManage = user.role === 'HRD';
 
-  const recentAttendance = useMemo(
-    () =>
-      attendances
-        .filter((record) => record.userId === employee?.id)
-        .sort((a, b) => b.date.localeCompare(a.date))
-        .slice(0, 5),
-    [attendances, employee?.id],
-  );
+  const recentAttendance = attendances
+    .filter((record) => record.userId === employee?.id)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 5);
 
-  const mySubmissions = useMemo(
-    () =>
-      submissions
-        .filter((submission) => submission.userId === employee?.id)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [employee?.id, submissions],
-  );
+  const mySubmissions = submissions
+    .filter((submission) => submission.userId === employee?.id)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   const remaining = balance ? balance.totalQuota - balance.used : 0;
   const usagePercent = balance?.totalQuota
@@ -84,7 +69,7 @@ export function EmployeeDetailScreen() {
         <EmptyState
           icon={UserCog}
           title="Karyawan tidak ditemukan"
-          description="Data mungkin sudah dihapus pada mock state."
+          description="Data mungkin sudah dihapus di server."
         />
       </Screen>
     );
@@ -240,7 +225,7 @@ export function EmployeeDetailScreen() {
         <EmptyState
           icon={ScanFace}
           title="Belum ada absensi"
-          description="Karyawan ini belum memiliki catatan kehadiran pada data mock."
+          description="Karyawan ini belum memiliki catatan kehadiran di server."
         />
       ) : (
         <View style={styles.list}>
@@ -283,7 +268,7 @@ export function EmployeeDetailScreen() {
               Hapus data karyawan
             </AppText>
             <AppText variant="caption" color={colors.dangerDark} style={{ lineHeight: 16 }}>
-              Menghapus karyawan juga menghapus saldo cuti dan komponen gajinya pada mock state.
+              Menghapus karyawan juga menghapus saldo cuti dan komponen gajinya di server.
               Riwayat absensi historis tetap tersimpan tanpa profil.
             </AppText>
             <Button
@@ -313,8 +298,8 @@ export function EmployeeDetailScreen() {
         }
         confirmLabel={nextStatus === 'INACTIVE' ? 'Ya, nonaktifkan' : 'Ya, aktifkan'}
         tone={nextStatus === 'INACTIVE' ? 'danger' : 'success'}
-        onConfirm={() => {
-          const result = setUserStatus(employee.id, nextStatus);
+        onConfirm={async () => {
+          const result = await setUserStatus(employee.id, nextStatus);
           setConfirmStatus(false);
           showToast(result.message, result.ok ? 'success' : 'error');
         }}
@@ -323,11 +308,11 @@ export function EmployeeDetailScreen() {
       <ConfirmDialog
         visible={confirmDelete}
         title="Hapus karyawan?"
-        message={`${employee.name} akan dihapus dari mock state beserta saldo cutinya. Tindakan ini tidak dapat dibatalkan.`}
+        message={`${employee.name} akan dihapus dari server beserta saldo cutinya. Tindakan ini tidak dapat dibatalkan.`}
         confirmLabel="Ya, hapus"
         tone="danger"
-        onConfirm={() => {
-          const result = deleteUser(employee.id);
+        onConfirm={async () => {
+          const result = await deleteUser(employee.id);
           setConfirmDelete(false);
           if (result.ok) {
             showToast(result.message, 'success');

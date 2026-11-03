@@ -10,7 +10,7 @@ import type {
 } from '../types';
 import { inclusiveDays, periodBounds } from './date';
 
-/** Gaji pokok harian: konversi memakai asumsi demo hari kerja perusahaan. */
+/** Gaji pokok harian: konversi memakai asumsi hari kerja perusahaan. */
 export function dailyBaseSalary(role: Pick<JobRole, 'baseSalary' | 'salaryBasis'>, workDaysPerMonth: number): number {
   if (role.salaryBasis === 'HARIAN') return Math.round(role.baseSalary);
   return Math.round(role.baseSalary / Math.max(1, workDaysPerMonth));

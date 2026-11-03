@@ -14,7 +14,7 @@ import { SearchField } from '../../components/common/SearchField';
 import { SegmentedTabs } from '../../components/common/SegmentedTabs';
 import { SectionHeader } from '../../components/common/Section';
 import { StatCard } from '../../components/common/StatCard';
-import { DEMO_PAYROLL_RULES, ROLE_LABEL } from '../../constants';
+import { PAYROLL_RULES, ROLE_LABEL } from '../../constants';
 import { useApp, useSessionUser } from '../../store/AppProvider';
 import { colors, radius, spacing } from '../../theme';
 import type { PayrollRow } from '../../types';
@@ -26,7 +26,7 @@ import { useAppNavigation } from '../../navigation/types';
 export function PayrollScreen({ showBack = false }: { showBack?: boolean }) {
   const user = useSessionUser();
   const navigation = useAppNavigation();
-  const { users, company, attendances, submissions, getRoleForUser, getCompensation, getRole, getLocationForUser } =
+  const { users, company, attendances, submissions, getRoleForUser, getCompensation, getLocationForUser } =
     useApp();
 
   const [period, setPeriod] = useState(currentPeriod());
@@ -105,14 +105,14 @@ export function PayrollScreen({ showBack = false }: { showBack?: boolean }) {
       header={
         <ScreenHeader
           title="Payroll"
-          subtitle={`${formatPeriodRange(period)} · data simulasi`}
+          subtitle={`${formatPeriodRange(period)} · data server`}
           onBack={showBack ? () => navigation.goBack() : undefined}
           onMenu={showBack ? undefined : () => navigation.navigate('Menu')}
           right={
             canFilter ? (
               <IconButton
                 icon={Info}
-                accessibilityLabel="Aturan perhitungan payroll demo"
+                accessibilityLabel="Aturan perhitungan rekap payroll"
                 onPress={() => setRulesOpen(true)}
                 backgroundColor={colors.surface}
                 color={colors.primary}
@@ -166,7 +166,7 @@ export function PayrollScreen({ showBack = false }: { showBack?: boolean }) {
                 <AppText style={styles.heroEyebrow}>PROYEKSI BULAN INI</AppText>
                 <AppText style={styles.heroProjection}>{formatCurrency(myRow.projectedGross)}</AppText>
               </View>
-              <Badge label="Simulasi" tone="dark" />
+              <Badge label="Estimasi" tone="dark" />
             </View>
           </Card>
 
@@ -207,8 +207,8 @@ export function PayrollScreen({ showBack = false }: { showBack?: boolean }) {
             style={{ marginTop: spacing.md }}
             icon={Info}
             tone="warning"
-            title="Nilai penggajian masih simulasi"
-            body="Angka dihitung dari data absensi mock dan komponen role. Belum memperhitungkan pajak, BPJS, atau potongan resmi lainnya."
+            title="Angka penggajian masih estimasi"
+            body="Angka dihitung dari data absensi server dan komponen role. Belum memperhitungkan pajak, BPJS, atau potongan resmi lainnya."
           />
 
           <Card style={{ marginTop: spacing.md }}>
@@ -287,14 +287,14 @@ export function PayrollScreen({ showBack = false }: { showBack?: boolean }) {
             style={{ marginTop: spacing.md }}
             icon={Info}
             tone="warning"
-            title="Data simulasi"
-            body="Nilai payroll dihitung dari mock attendance dan komponen role. Gunakan ikon info di atas untuk melihat aturan perhitungan demo."
+            title="Data terkini"
+            body="Nilai payroll dihitung dari data absensi server dan komponen role. Gunakan ikon info di atas untuk melihat aturan perhitungan."
           />
         </>
       )}
 
-      <BottomSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} title="Aturan payroll demo" subtitle={`Periode ${formatPeriod(period)}`}>
-        {DEMO_PAYROLL_RULES.map((rule, index) => (
+      <BottomSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} title="Aturan rekap payroll" subtitle={`Periode ${formatPeriod(period)}`}>
+        {PAYROLL_RULES.map((rule, index) => (
           <View key={rule} style={styles.ruleRow}>
             <View style={styles.ruleNumber}>
               <AppText style={styles.ruleNumberText}>{index + 1}</AppText>
@@ -307,7 +307,7 @@ export function PayrollScreen({ showBack = false }: { showBack?: boolean }) {
         <InfoNote
           icon={Info}
           tone="neutral"
-          body="Rumus ini disederhanakan untuk demo frontend. Perhitungan produksi (pajak, BPJS, lembur, hari libur) harus divalidasi tim payroll dan backend."
+          body="Rumus ini masih disederhanakan. Perhitungan produksi (pajak, BPJS, lembur, hari libur) harus divalidasi tim payroll dan backend."
         />
       </BottomSheet>
     </Screen>
@@ -383,7 +383,7 @@ export function PayrollBreakdown({ row }: { row: PayrollRow }) {
         />
       ) : null}
       <View style={styles.breakdownTotal}>
-        <AppText variant="bodyStrong">Total diterima (demo)</AppText>
+        <AppText variant="bodyStrong">Total diterima</AppText>
         <AppText variant="bodyStrong" color={colors.accentDark}>
           {formatCurrency(row.grossEarned)}
         </AppText>

@@ -79,27 +79,27 @@ export function SubmissionDetailScreen() {
       case 'CANCELLED':
         return 'Pengajuan dibatalkan oleh karyawan sehingga surat tidak tersedia.';
       default:
-        return 'Pengajuan disetujui penuh. Surat siap dicetak (preview simulasi).';
+        return 'Pengajuan disetujui penuh. Surat siap dipratinjau.';
     }
   }, [submission]);
 
   if (!submission || !employee) {
     return (
       <Screen header={<ScreenHeader title="Detail pengajuan" onBack={() => navigation.goBack()} />}>
-        <InfoNote icon={Info} tone="danger" body="Pengajuan tidak ditemukan pada data demo." />
+        <InfoNote icon={Info} tone="danger" body="Pengajuan tidak ditemukan." />
       </Screen>
     );
   }
 
   const balanceAfter = balance ? balance.totalQuota - balance.used : 0;
 
-  const submitDecision = () => {
+  const submitDecision = async () => {
     if (!decision) return;
     if (decision === 'REJECTED' && note.trim().length < 5) {
       setNoteError('Catatan penolakan minimal 5 karakter agar alasan jelas.');
       return;
     }
-    const result = decideSubmission({
+    const result = await decideSubmission({
       submissionId: submission.id,
       stage,
       decision,
@@ -231,7 +231,7 @@ export function SubmissionDetailScreen() {
             <AppText variant="caption" style={{ color: colors.infoDark, flex: 1 }}>
               {submission.attachmentName}
             </AppText>
-            <Badge label="Simulasi lampiran" tone="info" />
+            <Badge label="Lampiran" tone="info" />
           </View>
         ) : null}
       </Card>
@@ -397,8 +397,8 @@ export function SubmissionDetailScreen() {
         message="Pengajuan akan berstatus dibatalkan dan tidak dapat diproses HRD. Anda dapat membuat pengajuan baru."
         confirmLabel="Ya, batalkan"
         tone="danger"
-        onConfirm={() => {
-          const result = cancelSubmission(submission.id, user.id);
+        onConfirm={async () => {
+          const result = await cancelSubmission(submission.id, user.id);
           setConfirmCancel(false);
           if (result.ok) showToast(result.message, 'success');
           else showToast(result.message, 'error');

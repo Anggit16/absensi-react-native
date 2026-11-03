@@ -71,9 +71,9 @@ export function LoginScreen() {
               Presensi, pengajuan, dan payroll karyawan dalam satu aplikasi.
             </AppText>
             <View style={styles.brandChips}>
-              <Badge label="Multi-company" tone="dark" />
+              <Badge label="Multi-tenant" tone="dark" />
               <Badge label="Dual approval" tone="dark" />
-              <Badge label="Payroll demo" tone="dark" />
+              <Badge label="Payroll" tone="dark" />
             </View>
           </View>
 
@@ -174,13 +174,13 @@ export function LoginScreen() {
           <View style={styles.footer}>
             <ShieldCheck size={14} color={colors.textOnDarkMuted} strokeWidth={2} />
             <AppText style={styles.footerText}>
-              Mode demo lokal: data disimpan di memori aplikasi, tanpa backend. Autentikasi ini bukan
-              keamanan produksi.
+              Autentikasi memakai token Bearer dari server. Data tersimpan di database perusahaan,
+              bukan di memori perangkat.
             </AppText>
           </View>
           <View style={styles.footerBadge}>
             <Sparkles size={12} color={colors.accent} strokeWidth={2.2} />
-            <AppText style={styles.footerBadgeText}>Frontend demo · Expo SDK 58</AppText>
+            <AppText style={styles.footerBadgeText}>Expo SDK 58 · AbsensiPro API v1</AppText>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

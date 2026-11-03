@@ -17,7 +17,7 @@ import { Avatar } from '../../components/common/Avatar';
 import { Badge } from '../../components/common/Badge';
 import { Card } from '../../components/common/Card';
 import { InfoNote, ProgressBar } from '../../components/common/Feedback';
-import { IconButton, ScreenHeader } from '../../components/common/Header';
+import { ScreenHeader } from '../../components/common/Header';
 import { Screen } from '../../components/common/Screen';
 import { SectionHeader } from '../../components/common/Section';
 import { StatCard } from '../../components/common/StatCard';
@@ -149,7 +149,7 @@ export function OwnerDashboardScreen() {
             <AppText style={styles.heroLinkText}>Monitoring absensi</AppText>
             <ArrowRight size={13} color={colors.accent} strokeWidth={2.4} />
           </Pressable>
-          <Badge label="Data simulasi" tone="dark" />
+          <Badge label="Data terkini" tone="dark" />
         </View>
       </Card>
 
@@ -337,7 +337,7 @@ export function OwnerDashboardScreen() {
         icon={UserRound}
         tone="neutral"
         title={`${roles.length} role · ${locations.length} lokasi · ${approvedThisMonth.length} cuti disetujui bulan ini`}
-        body="Dashboard memakai satu state mock yang sama dengan modul HRD dan karyawan. Perubahan langsung tercermin setelah aksi dilakukan."
+        body="Dashboard memakai data server yang sama dengan modul HRD dan karyawan. Perubahan langsung tercermin setelah aksi dilakukan."
       />
       <AppText variant="caption" align="center" style={styles.footnote}>
         Total payroll aktual {formatCurrency(payrollSummary.total)} · {payrollSummary.headcount} penerima

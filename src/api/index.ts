@@ -54,6 +54,71 @@ export interface LeaveBalance {
   remaining: number;
 }
 
+export interface LeaveAdjustmentRecord {
+  id: string;
+  at: string;
+  byName: string;
+  delta: number;
+  reason: string;
+}
+
+/** Baris tabel saldo cuti (sudah termasuk riwayat penyesuaian). */
+export interface LeaveBalanceRecord extends LeaveBalance {
+  id: string;
+  companyId: string;
+  roleName?: string;
+  adjustments: LeaveAdjustmentRecord[];
+}
+
+export interface CompanyRecord {
+  id: string;
+  name: string;
+  legalName: string | null;
+  industry: string | null;
+  address: string | null;
+  city: string | null;
+  phone: string | null;
+  email: string | null;
+  taxId: string | null;
+  timezone: string;
+  workDaysPerMonth: number;
+  logoInitials: string | null;
+  establishedYear: number | null;
+  annualLeaveQuotaDefault: number;
+}
+
+export interface JobRoleRecord {
+  id: string;
+  companyId: string;
+  name: string;
+  department: string | null;
+  checkInTime: string;
+  checkOutTime: string;
+  lateToleranceMinutes: number;
+  salaryBasis: 'HARIAN' | 'BULANAN';
+  baseSalary: number;
+  transportAllowance: number;
+  mealAllowance: number;
+  latePenaltyPerMinute: number;
+  annualLeaveQuota: number;
+  locationId: string | null;
+  status: 'ACTIVE' | 'INACTIVE';
+  createdAt: string | null;
+}
+
+export interface OfficeLocationRecord {
+  id: string;
+  companyId: string;
+  name: string;
+  type: 'KANTOR' | 'PROYEK' | 'CABANG';
+  address: string;
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  status: 'ACTIVE' | 'INACTIVE';
+  isDefault: boolean;
+}
+
 export interface AttendanceRecord {
   id: string;
   companyId: string;
@@ -62,6 +127,11 @@ export interface AttendanceRecord {
   date: string;
   checkInAt: string | null;
   checkOutAt: string | null;
+  checkOutLatitude?: number | null;
+  checkOutLongitude?: number | null;
+  checkOutDistanceMeters?: number | null;
+  checkOutSelfieCaptured?: boolean;
+  checkOutSelfieUrl?: string | null;
   status: 'ON_TIME' | 'LATE' | 'ABSENT' | 'ON_LEAVE';
   lateMinutes: number;
   locationId: string | null;
@@ -201,6 +271,8 @@ export interface CreateSubmissionPayload {
   endDate?: string | null;
   reason: string;
   resignEffectiveDate?: string | null;
+  /** Nama lampiran. Unggah berkas belum tersedia pada API. */
+  attachmentName?: string | null;
   attachment?: {
     uri: string;
     name: string;
@@ -211,7 +283,6 @@ export interface CreateSubmissionPayload {
 export interface CheckInPayload {
   latitude: number;
   longitude: number;
-  locationId?: string | null;
   selfie?: { uri: string; name: string; type: string } | null;
   selfieCaptured?: boolean;
   note?: string | null;
@@ -258,6 +329,69 @@ export const api = {
     return request<T>('/dashboard');
   },
 
+  // --- Perusahaan -------------------------------------------------------
+  company() {
+    return request<{ company: CompanyRecord }>('/company');
+  },
+
+  updateCompany(body: Record<string, unknown>) {
+    return request<{ company: CompanyRecord }>('/company', { method: 'PUT', body });
+  },
+
+  // --- Role kerja -------------------------------------------------------
+  async roles() {
+    const response = await request<{ data: JobRoleRecord[] }>('/roles');
+    return response.data;
+  },
+
+  async createRole(body: Record<string, unknown>) {
+    const response = await request<{ data: JobRoleRecord }>('/roles', { method: 'POST', body });
+    return response.data;
+  },
+
+  async updateRole(id: string, body: Record<string, unknown>) {
+    const response = await request<{ data: JobRoleRecord }>(`/roles/${id}`, {
+      method: 'PUT',
+      body,
+    });
+
+    return response.data;
+  },
+
+  deleteRole(id: string) {
+    return request<{ message?: string; data?: JobRoleRecord }>(`/roles/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // --- Lokasi kerja -----------------------------------------------------
+  async locations() {
+    const response = await request<{ data: OfficeLocationRecord[] }>('/locations');
+    return response.data;
+  },
+
+  async createLocation(body: Record<string, unknown>) {
+    const response = await request<{ data: OfficeLocationRecord }>('/locations', {
+      method: 'POST',
+      body,
+    });
+
+    return response.data;
+  },
+
+  async updateLocation(id: string, body: Record<string, unknown>) {
+    const response = await request<{ data: OfficeLocationRecord }>(`/locations/${id}`, {
+      method: 'PUT',
+      body,
+    });
+
+    return response.data;
+  },
+
+  deleteLocation(id: string) {
+    return request<{ message?: string }>(`/locations/${id}`, { method: 'DELETE' });
+  },
+
   // --- Absensi ----------------------------------------------------------
   async todayAttendance() {
     const response = await request<{ data: AttendanceRecord | null }>('/attendances/today');
@@ -268,10 +402,9 @@ export const api = {
     const form = new FormData();
     form.append('latitude', String(payload.latitude));
     form.append('longitude', String(payload.longitude));
-
-    if (payload.locationId) form.append('locationId', payload.locationId);
-    if (payload.note) form.append('note', payload.note);
     form.append('selfieCaptured', payload.selfieCaptured ? '1' : '0');
+
+    if (payload.note) form.append('note', payload.note);
 
     if (payload.selfie) {
       // React Native menerima objek {uri, name, type} sebagai file multipart.
@@ -286,15 +419,29 @@ export const api = {
     return response.data;
   },
 
-  async checkOut() {
+  async checkOut(payload: CheckInPayload) {
+    const form = new FormData();
+    form.append('latitude', String(payload.latitude));
+    form.append('longitude', String(payload.longitude));
+    form.append('selfieCaptured', payload.selfieCaptured ? '1' : '0');
+
+    if (payload.note) form.append('note', payload.note);
+
+    if (payload.selfie) {
+      form.append('selfie', payload.selfie as unknown as Blob);
+    }
+
     const response = await request<{ data: AttendanceRecord }>('/attendances/check-out', {
       method: 'POST',
+      form,
     });
 
     return response.data;
   },
 
-  async attendanceHistory(params: { from?: string; to?: string; userId?: string } = {}) {
+  async attendanceHistory(
+    params: { from?: string; to?: string; userId?: string; scope?: 'company' } = {},
+  ) {
     return request<{ data: AttendanceRecord[]; summary: Record<string, number> }>(
       '/attendances',
       { query: params },
@@ -333,26 +480,31 @@ export const api = {
   },
 
   async createSubmission(payload: CreateSubmissionPayload) {
-    const form = new FormData();
+    const fields: Record<string, unknown> = {
+      type: payload.type,
+      startDate: payload.startDate,
+      reason: payload.reason,
+    };
 
-    form.append('type', payload.type);
-    form.append('startDate', payload.startDate);
-    form.append('reason', payload.reason);
+    if (payload.endDate) fields.endDate = payload.endDate;
+    if (payload.leaveCategory) fields.leaveCategory = payload.leaveCategory;
+    if (payload.permissionType) fields.permissionType = payload.permissionType;
+    if (payload.resignEffectiveDate) fields.resignEffectiveDate = payload.resignEffectiveDate;
+    if (payload.attachmentName) fields.attachmentName = payload.attachmentName;
 
-    if (payload.endDate) form.append('endDate', payload.endDate);
-    if (payload.leaveCategory) form.append('leaveCategory', payload.leaveCategory);
-    if (payload.permissionType) form.append('permissionType', payload.permissionType);
-    if (payload.resignEffectiveDate) {
-      form.append('resignEffectiveDate', payload.resignEffectiveDate);
-    }
+    // Lampiran asli (bila ada) dikirim sebagai multipart, selain itu cukup JSON.
+    let form: FormData | undefined;
 
     if (payload.attachment) {
+      form = new FormData();
+
+      Object.entries(fields).forEach(([key, value]) => form?.append(key, String(value)));
       form.append('attachment', payload.attachment as unknown as Blob);
     }
 
     const response = await request<{ data: SubmissionRecord }>('/submissions', {
       method: 'POST',
-      form,
+      ...(form ? { form } : { body: fields }),
     });
 
     return response.data;
@@ -392,13 +544,13 @@ export const api = {
 
   // --- Saldo cuti -------------------------------------------------------
   async leaveBalances(year?: number) {
-    return request<{ data: LeaveBalance[]; year?: number }>('/leave-balances', {
+    return request<{ data: LeaveBalanceRecord[]; year?: number }>('/leave-balances', {
       query: { year },
     });
   },
 
   async adjustLeaveBalance(userId: string, delta: number, reason: string, year?: number) {
-    const response = await request<{ data: LeaveBalance }>(
+    const response = await request<{ data: LeaveBalanceRecord }>(
       `/leave-balances/${userId}/adjustments`,
       { method: 'POST', body: { delta, reason, year } },
     );
@@ -443,10 +595,32 @@ export const api = {
     return response.data;
   },
 
+  deleteEmployee(id: string) {
+    return request<{ message?: string }>(`/employees/${id}`, { method: 'DELETE' });
+  },
+
   // --- Akun HRD (khusus Owner) -----------------------------------------
   async hrdAccounts() {
     const response = await request<{ data: AuthUser[] }>('/hrd-accounts');
     return response.data;
+  },
+
+  async createHrd(body: Record<string, unknown>) {
+    const response = await request<{ data: AuthUser }>('/hrd-accounts', { method: 'POST', body });
+    return response.data;
+  },
+
+  async updateHrd(id: string, body: Record<string, unknown>) {
+    const response = await request<{ data: AuthUser }>(`/hrd-accounts/${id}`, {
+      method: 'PUT',
+      body,
+    });
+
+    return response.data;
+  },
+
+  deleteHrd(id: string) {
+    return request<{ message?: string }>(`/hrd-accounts/${id}`, { method: 'DELETE' });
   },
 
   async updateHrdCompensation(id: string, body: Omit<HrdCompensation, 'userId' | 'updatedAt'>) {

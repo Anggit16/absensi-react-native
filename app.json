@@ -34,6 +34,21 @@
           "imageWidth": 200,
           "resizeMode": "contain"
         }
+      ],
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "AbsensiPro memerlukan lokasi Anda untuk memvalidasi radius kantor saat absen masuk/pulang."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "AbsensiPro hanya memakai kamera untuk selfie absensi; galeri tidak dipakai.",
+          "cameraPermission": "AbsensiPro memerlukan kamera depan untuk selfie absensi.",
+          "microphonePermission": false
+        }
       ]
     ]
   }

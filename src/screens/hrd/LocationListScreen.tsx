@@ -60,7 +60,7 @@ export function LocationListScreen() {
       header={
         <ScreenHeader
           title="Lokasi kerja"
-          subtitle={`${locations.length} titik geofencing demo`}
+          subtitle={`${locations.length} titik lokasi geofencing`}
           onBack={() => navigation.goBack()}
           right={
             canManage ? (
@@ -88,7 +88,7 @@ export function LocationListScreen() {
       <Card tone="dark" style={styles.hero}>
         <View style={styles.heroRow}>
           <View style={{ flex: 1, gap: 2 }}>
-            <AppText style={styles.heroEyebrow}>GEOFENCING DEMO</AppText>
+            <AppText style={styles.heroEyebrow}>GEOFENCING</AppText>
             <AppText style={styles.heroValue}>{locations.length} lokasi</AppText>
             <AppText style={styles.heroHint}>
               Radius absensi {Math.min(...locations.map((item) => item.radiusMeters), 0)}–
@@ -179,8 +179,8 @@ export function LocationListScreen() {
         style={{ marginTop: spacing.md }}
         icon={Info}
         tone="neutral"
-        title="Radius = batas simulasi absensi"
-        body="Aplikasi membandingkan jarak simulasi dengan radius lokasi. GPS perangkat dan anti fake GPS belum diimplementasikan pada fase frontend."
+        title="Radius = batas absensi"
+        body="Server membandingkan jarak GPS perangkat dengan radius lokasi. Deteksi mock location bergantung pada dukungan platform."
       />
     </Screen>
   );

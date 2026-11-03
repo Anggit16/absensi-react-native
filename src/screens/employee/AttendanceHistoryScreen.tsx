@@ -182,7 +182,7 @@ export function AttendanceHistoryScreen() {
         <View style={styles.legendRow}>
           <Badge label="Terlambat" tone="warning" />
           <AppText variant="caption" style={{ flex: 1 }}>
-            Melebihi batas toleransi; denda masuk payroll simulasi.
+            Melebihi batas toleransi; denda masuk rekap payroll.
           </AppText>
         </View>
         <View style={styles.legendRow}>

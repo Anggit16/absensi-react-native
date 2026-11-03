@@ -15,12 +15,11 @@ import { SectionHeader } from '../../components/common/Section';
 import { SelectField } from '../../components/common/SelectField';
 import { TextField } from '../../components/common/TextField';
 import { useToast } from '../../components/common/Toast';
-import { useApp, useSessionUser } from '../../store/AppProvider';
-import { colors, spacing } from '../../theme';
+import { useApp, useSessionUser , formHelper } from '../../store/AppProvider';
+import { spacing } from '../../theme';
 import { ACCOUNT_STATUS_LABEL, EMPLOYMENT_TYPE_LABEL } from '../../constants';
 import { addDays, todayISO } from '../../utils/date';
 import { isValidEmail } from '../../utils/validation';
-import { demoHelper } from '../../store/AppProvider';
 import type { AccountStatus, EmploymentType, UserRole } from '../../types';
 import { useAppNavigation, AppParamList } from '../../navigation/types';
 
@@ -47,7 +46,7 @@ export function EmployeeFormScreen() {
     phone: editing?.phone ?? '',
     employeeCode:
       editing?.employeeCode ??
-      demoHelper.nextEmployeeCode(users, new Date().getFullYear()),
+      formHelper.nextEmployeeCode(users, new Date().getFullYear()),
     jobRoleId: editing?.jobRoleId ?? defaultRole?.id ?? '',
     locationId: editing?.locationId ?? defaultRole?.locationId ?? locations[0]?.id ?? '',
     employmentType: (editing?.employmentType ?? 'TETAP') as EmploymentType,
@@ -78,7 +77,7 @@ export function EmployeeFormScreen() {
     setErrors((previous) => ({ ...previous, [key]: '' }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const nextErrors: Record<string, string> = {};
     if (form.name.trim().length < 3) nextErrors.name = 'Nama minimal 3 karakter.';
     if (!isValidEmail(form.email)) nextErrors.email = 'Format email tidak valid.';
@@ -94,7 +93,7 @@ export function EmployeeFormScreen() {
       return;
     }
 
-    const result = saveUser({
+    const result = await saveUser({
       id: editing?.id,
       name: form.name,
       email: form.email,
@@ -146,7 +145,7 @@ export function EmployeeFormScreen() {
             </AppText>
             <AppText variant="caption" style={{ lineHeight: 16 }}>
               {isEdit
-                ? 'Perubahan langsung berlaku pada data mock dan tampilan terkait.'
+                ? 'Perubahan langsung berlaku di server dan tampilan terkait.'
                 : 'Saldo cuti otomatis dibuat sesuai kuota role yang dipilih.'}
             </AppText>
           </View>
@@ -311,7 +310,7 @@ export function EmployeeFormScreen() {
         style={{ marginTop: spacing.md }}
         icon={Info}
         tone="neutral"
-        body="Data karyawan disimpan pada mock state aplikasi. Password disimpan sebagai teks biasa hanya untuk keperluan demo."
+        body="Data karyawan disimpan di server. Password di-hash dan tidak ditampilkan kembali."
       />
       <View style={styles.previewRow}>
         <AppText variant="caption">Pratinjau email login</AppText>

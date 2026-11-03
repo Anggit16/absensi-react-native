@@ -71,7 +71,7 @@ export function LeaveAllocationDetailScreen() {
           description={
             user.role === 'EMPLOYEE'
               ? 'Penyesuaian kuota cuti hanya dapat dilakukan Admin/HRD.'
-              : 'Data saldo cuti karyawan tidak ditemukan pada mock state.'
+              : 'Data saldo cuti karyawan tidak ditemukan di server.'
           }
           actionLabel="Kembali"
           onAction={() => navigation.goBack()}
@@ -80,7 +80,7 @@ export function LeaveAllocationDetailScreen() {
     );
   }
 
-  const submitAdjustment = () => {
+  const submitAdjustment = async () => {
     if (delta <= 0) {
       setError('Jumlah hari harus lebih dari 0.');
       return;
@@ -94,7 +94,7 @@ export function LeaveAllocationDetailScreen() {
       return;
     }
 
-    const result = adjustLeaveBalance({
+    const result = await adjustLeaveBalance({
       userId: employee.id,
       delta: signedDelta,
       reason: reason.trim(),

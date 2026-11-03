@@ -15,7 +15,7 @@ import { TextField } from '../../components/common/TextField';
 import { useToast } from '../../components/common/Toast';
 import { ROLE_LABEL } from '../../constants';
 import { useApp, useSessionUser } from '../../store/AppProvider';
-import { colors, spacing } from '../../theme';
+import { spacing } from '../../theme';
 import { formatDate } from '../../utils/date';
 import { isValidEmail } from '../../utils/validation';
 import { useAppNavigation } from '../../navigation/types';
@@ -43,7 +43,7 @@ export function EditProfileScreen() {
     setErrors((previous) => ({ ...previous, [key]: '' }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const nextErrors: Record<string, string> = {};
     if (form.name.trim().length < 3) nextErrors.name = 'Nama minimal 3 karakter.';
     if (!isValidEmail(form.email)) nextErrors.email = 'Format email tidak valid.';
@@ -51,7 +51,7 @@ export function EditProfileScreen() {
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    const result = updateProfile(user.id, {
+    const result = await updateProfile(user.id, {
       name: form.name.trim(),
       email: form.email.trim(),
       phone: form.phone.trim(),
@@ -82,7 +82,7 @@ export function EditProfileScreen() {
         </View>
       </Card>
 
-      <SectionHeader title="Data pribadi" subtitle="Perubahan tersimpan pada state mock sesi ini" />
+      <SectionHeader title="Data pribadi" subtitle="Perubahan tersimpan di server" />
       <Card style={styles.formCard}>
         <TextField label="Nama lengkap" value={form.name} onChangeText={(value) => update('name', value)} error={errors.name} required />
         <TextField

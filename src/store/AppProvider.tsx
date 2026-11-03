@@ -1,5 +1,31 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { createSeedData, SeedData } from '../data/seed';
+/**
+ * Store aplikasi yang terhubung ke AbsensiPro API (Laravel + MySQL).
+ *
+ * Prinsip:
+ * - Semua layar tetap memakai `useApp()` dan bentuk data domain yang sama.
+ * - Aksi yang mengubah data kini berupa async (Promise<ActionResult>) karena
+ *   server adalah sumber kebenaran.
+ * - Token Sanctum disimpan di SecureStore (mobile) / localStorage (web).
+ */
+
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+
+import { addDays, inclusiveDays, todayISO } from '../utils/date';
+import { api, type AuthUser } from '../api';
+import { ApiError, setAuthToken, setUnauthorizedHandler } from '../api/client';
+import {
+  mapAttendance,
+  mapCompany,
+  mapCompensation,
+  mapJobRole,
+  mapLeaveBalance,
+  mapLocation,
+  mapSubmission,
+  mapUser,
+  sortAttendances,
+  sortSubmissions,
+} from '../api/mappers';
+import { clearToken, loadToken, saveToken } from '../api/tokenStore';
 import type {
   AccountStatus,
   Attendance,
@@ -13,9 +39,8 @@ import type {
   SubmissionType,
   User,
   UserRole,
+  WorkspaceData,
 } from '../types';
-import { addDays, inclusiveDays, nowTime, timeToMinutes, todayISO } from '../utils/date';
-import { isValidEmail } from '../utils/validation';
 
 export interface ActionResult {
   ok: boolean;
@@ -29,11 +54,13 @@ export interface SubmitAttendanceInput {
   mode: 'CHECK_IN' | 'CHECK_OUT';
   locationId?: string;
   locationName?: string;
-  latitude?: number;
-  longitude?: number;
-  distanceMeters?: number;
+  latitude: number;
+  longitude: number;
+  distanceMeters: number;
   withinRadius: boolean;
   selfieCaptured: boolean;
+  /** File selfie dari kamera (uri perangkat) untuk diunggah ke server. */
+  selfie?: { uri: string; name: string; type: string } | null;
 }
 
 export interface NewSubmissionInput {
@@ -96,43 +123,43 @@ export interface LocationPayload {
   status: AccountStatus;
 }
 
-interface AppContextValue extends SeedData {
+interface AppContextValue extends WorkspaceData {
   sessionUser: User | null;
+  /** true selama sesi tersimpan sedang dipulihkan saat aplikasi dibuka. */
+  isRestoring: boolean;
   isAuthenticating: boolean;
   authError: string;
   login: (identifier: string, password: string) => Promise<ActionResult>;
   logout: () => void;
-  switchDemoAccount: (roleKey: UserRole | 'owner' | 'hrd' | 'employee') => ActionResult;
-  checkAttendance: (input: SubmitAttendanceInput) => ActionResult;
-  createSubmission: (input: NewSubmissionInput) => ActionResult;
-  cancelSubmission: (submissionId: string, actorId: string) => ActionResult;
+  checkAttendance: (input: SubmitAttendanceInput) => Promise<ActionResult>;
+  createSubmission: (input: NewSubmissionInput) => Promise<ActionResult>;
+  cancelSubmission: (submissionId: string, actorId: string) => Promise<ActionResult>;
   decideSubmission: (params: {
     submissionId: string;
     stage: 'HRD' | 'OWNER';
     decision: 'APPROVED' | 'REJECTED';
     note: string;
     actorId: string;
-  }) => ActionResult;
+  }) => Promise<ActionResult>;
   adjustLeaveBalance: (params: {
     userId: string;
     delta: number;
     reason: string;
     actorName: string;
-  }) => ActionResult;
-  saveUser: (payload: UserPayload) => ActionResult;
-  setUserStatus: (userId: string, status: AccountStatus) => ActionResult;
-  deleteUser: (userId: string) => ActionResult;
-  saveRole: (payload: RolePayload) => ActionResult;
-  deleteRole: (roleId: string) => ActionResult;
-  saveLocation: (payload: LocationPayload) => ActionResult;
-  deleteLocation: (locationId: string) => ActionResult;
+  }) => Promise<ActionResult>;
+  saveUser: (payload: UserPayload) => Promise<ActionResult>;
+  setUserStatus: (userId: string, status: AccountStatus) => Promise<ActionResult>;
+  deleteUser: (userId: string) => Promise<ActionResult>;
+  saveRole: (payload: RolePayload) => Promise<ActionResult>;
+  deleteRole: (roleId: string) => Promise<ActionResult>;
+  saveLocation: (payload: LocationPayload) => Promise<ActionResult>;
+  deleteLocation: (locationId: string) => Promise<ActionResult>;
   updateHrdCompensation: (
     userId: string,
     payload: Omit<HrdCompensation, 'userId' | 'updatedAt'>,
-  ) => ActionResult;
-  updateCompany: (patch: Partial<Company>) => ActionResult;
-  updateProfile: (userId: string, patch: Partial<User>) => ActionResult;
-  resetDemoData: () => void;
+  ) => Promise<ActionResult>;
+  updateCompany: (patch: Partial<Company>) => Promise<ActionResult>;
+  updateProfile: (userId: string, patch: Partial<User>) => Promise<ActionResult>;
   getUser: (userId?: string) => User | undefined;
   getRole: (roleId?: string) => JobRole | undefined;
   getLocation: (locationId?: string) => OfficeLocation | undefined;
@@ -146,21 +173,118 @@ interface AppContextValue extends SeedData {
 
 const AppContext = createContext<AppContextValue | null>(null);
 
-const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const EMPTY_COMPANY: Company = {
+  id: '',
+  name: 'AbsensiPro',
+  legalName: '',
+  industry: '',
+  address: '',
+  city: '',
+  phone: '',
+  email: '',
+  taxId: '',
+  timezone: 'Asia/Jakarta',
+  workDaysPerMonth: 22,
+  logoInitials: 'AP',
+  establishedYear: 0,
+};
+
+function emptyData(): WorkspaceData {
+  return {
+    company: EMPTY_COMPANY,
+    users: [],
+    roles: [],
+    locations: [],
+    attendances: [],
+    leaveBalances: [],
+    submissions: [],
+    hrdCompensations: [],
+  };
+}
+
+/** Tanggal 1 pada N bulan lalu, dipakai sebagai rentang riwayat absensi. */
+function firstDayOfMonthsAgo(monthsAgo: number): string {
+  const now = new Date();
+  const date = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+
+  return `${date.getFullYear()}-${month}-01`;
+}
+
+/** Pesan error yang ramah untuk ditampilkan di toast/form. */
+function describeError(error: unknown): string {
+  if (error instanceof ApiError) {
+    return error.firstValidationMessage ?? error.message;
+  }
+
+  if (error instanceof TypeError) {
+    return 'Tidak dapat terhubung ke server. Periksa koneksi dan EXPO_PUBLIC_API_URL.';
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return 'Terjadi kesalahan. Coba lagi.';
+}
 
 function normalize(value: string): string {
   return value.trim().toLowerCase();
 }
 
+/** Ambil seluruh data yang dibutuhkan layar sesuai role pengguna. */
+async function fetchWorkspace(auth: AuthUser): Promise<WorkspaceData> {
+  const isEmployee = auth.role === 'EMPLOYEE';
+  const from = firstDayOfMonthsAgo(2);
+  const to = todayISO();
+
+  const [companyResponse, roles, locations, submissions, balances, attendance, employees, hrdAccounts] =
+    await Promise.all([
+      api.company(),
+      api.roles(),
+      api.locations(),
+      api.submissions(),
+      api.leaveBalances(),
+      api.attendanceHistory(
+        isEmployee ? { from, to } : { from, to, scope: 'company' },
+      ),
+      isEmployee ? Promise.resolve<AuthUser[]>([]) : api.employees(),
+      auth.role === 'OWNER' ? api.hrdAccounts() : Promise.resolve<AuthUser[]>([]),
+    ]);
+
+  const company = mapCompany(companyResponse.company);
+
+  const userMap = new Map<string, User>();
+  [auth, ...employees, ...hrdAccounts].forEach((record) => {
+    userMap.set(record.id, mapUser(record));
+  });
+
+  const compensations = [auth, ...hrdAccounts]
+    .map(mapCompensation)
+    .filter((item): item is HrdCompensation => Boolean(item));
+
+  return {
+    company,
+    users: [...userMap.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    roles: roles.map(mapJobRole),
+    locations: locations.map(mapLocation),
+    attendances: sortAttendances(attendance.data.map(mapAttendance)),
+    leaveBalances: balances.data.map((row) => mapLeaveBalance(row, company.id)),
+    submissions: sortSubmissions(submissions.map(mapSubmission)),
+    hrdCompensations: compensations,
+  };
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [data, setData] = useState<SeedData>(() => createSeedData());
-  const [sessionUserId, setSessionUserId] = useState<string | null>(null);
+  const [data, setData] = useState<WorkspaceData>(() => emptyData());
+  const [session, setSession] = useState<AuthUser | null>(null);
+  const [isRestoring, setIsRestoring] = useState(true);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [authError, setAuthError] = useState('');
 
   const sessionUser = useMemo(
-    () => data.users.find((user) => user.id === sessionUserId) ?? null,
-    [data.users, sessionUserId],
+    () => (session ? data.users.find((user) => user.id === session.id) ?? null : null),
+    [data.users, session],
   );
 
   const getUser = useCallback(
@@ -222,9 +346,54 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [data.users],
   );
 
+  // --- Sesi -------------------------------------------------------------
+
+  const clearSession = useCallback(() => {
+    setAuthToken(null);
+    setSession(null);
+    setData(emptyData());
+    setAuthError('');
+  }, []);
+
+  useEffect(() => {
+    setUnauthorizedHandler(clearSession);
+
+    return () => setUnauthorizedHandler(null);
+  }, [clearSession]);
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const token = await loadToken();
+        if (!token) return;
+
+        setAuthToken(token);
+        const me = await api.me();
+        const snapshot = await fetchWorkspace(me.user);
+
+        if (!active) return;
+
+        setData(snapshot);
+        setSession(me.user);
+      } catch {
+        setAuthToken(null);
+        await clearToken();
+      } finally {
+        if (active) setIsRestoring(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const login = useCallback(
     async (identifier: string, password: string): Promise<ActionResult> => {
       setAuthError('');
+
       if (!identifier.trim() || !password.trim()) {
         const message = 'Email/username dan password wajib diisi.';
         setAuthError(message);
@@ -232,731 +401,552 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       setIsAuthenticating(true);
-      await delay(650);
 
-      const found = data.users.find(
-        (user) => normalize(user.email) === normalize(identifier) || normalize(user.username) === normalize(identifier),
-      );
+      try {
+        const response = await api.login(identifier.trim(), password);
+        const snapshot = await fetchWorkspace(response.user);
 
-      if (!found || found.password !== password) {
-        const message = 'Email/username atau password tidak sesuai. Gunakan akun demo di bawah.';
+        await saveToken(response.token);
+
+        setData(snapshot);
+        setSession(response.user);
+
+        return { ok: true, message: `Selamat datang, ${response.user.name}.` };
+      } catch (error) {
+        setAuthToken(null);
+        const message = describeError(error);
         setAuthError(message);
-        setIsAuthenticating(false);
         return { ok: false, message };
-      }
-
-      if (found.status === 'INACTIVE') {
-        const message = 'Akun ini nonaktif. Hubungi Admin/HRD untuk mengaktifkan kembali.';
-        setAuthError(message);
+      } finally {
         setIsAuthenticating(false);
-        return { ok: false, message };
       }
-
-      setSessionUserId(found.id);
-      setIsAuthenticating(false);
-      return { ok: true, message: `Selamat datang, ${found.name}.` };
     },
-    [data.users],
+    [],
   );
 
   const logout = useCallback(() => {
-    setSessionUserId(null);
-    setAuthError('');
-  }, []);
-
-  const switchDemoAccount = useCallback(
-    (roleKey: UserRole | 'owner' | 'hrd' | 'employee'): ActionResult => {
-      const role: UserRole =
-        roleKey === 'owner'
-          ? 'OWNER'
-          : roleKey === 'hrd'
-            ? 'HRD'
-            : roleKey === 'employee'
-              ? 'EMPLOYEE'
-              : roleKey;
-      const account = data.users.find((user) => user.role === role && user.isDemoAccount);
-      if (!account || account.status === 'INACTIVE') {
-        return { ok: false, message: 'Akun demo tidak tersedia.' };
+    void (async () => {
+      try {
+        await api.logout();
+      } catch {
+        // Token mungkin sudah kedaluwarsa; tetap bersihkan sesi lokal.
       }
-      setSessionUserId(account.id);
-      setAuthError('');
-      return { ok: true, message: `Beralih ke akun ${account.name}.` };
-    },
-    [data.users],
-  );
+
+      await clearToken();
+      clearSession();
+    })();
+  }, [clearSession]);
+
+  const reloadWorkspace = useCallback(async (): Promise<void> => {
+    if (!session) return;
+    setData(await fetchWorkspace(session));
+  }, [session]);
+
+  // --- Absensi ----------------------------------------------------------
 
   const checkAttendance = useCallback(
-    (input: SubmitAttendanceInput): ActionResult => {
-      const user = data.users.find((item) => item.id === input.userId);
-      if (!user) return { ok: false, message: 'Pengguna tidak ditemukan.' };
-
-      const role = user.jobRoleId ? data.roles.find((item) => item.id === user.jobRoleId) : undefined;
-      if (!role) return { ok: false, message: 'Role kerja belum diatur. Hubungi Admin/HRD.' };
-
+    async (input: SubmitAttendanceInput): Promise<ActionResult> => {
       if (!input.withinRadius) {
         return {
           ok: false,
-          message: 'Absensi ditolak: posisi simulasi berada di luar radius lokasi kerja.',
+          message: 'Absensi ditolak: posisi Anda berada di luar radius lokasi kerja.',
         };
       }
 
       if (!input.selfieCaptured) {
-        return { ok: false, message: 'Ambil selfie simulasi terlebih dahulu sebelum absen.' };
+        return { ok: false, message: 'Ambil selfie terlebih dahulu sebelum absen.' };
       }
 
-      const today = todayISO();
-      const time = nowTime();
-      const existing = data.attendances.find(
-        (record) => record.userId === input.userId && record.date === today,
-      );
+      try {
+        if (input.mode === 'CHECK_IN') {
+          const record = await api.checkIn({
+            latitude: input.latitude,
+            longitude: input.longitude,
+            selfie: input.selfie,
+            selfieCaptured: true,
+          });
 
-      if (input.mode === 'CHECK_IN') {
-        if (existing?.checkInAt) {
-          return { ok: false, message: `Anda sudah absen masuk hari ini pukul ${existing.checkInAt}.` };
+          const mapped = mapAttendance(record);
+
+          setData((previous) => ({
+            ...previous,
+            attendances: sortAttendances([
+              mapped,
+              ...previous.attendances.filter((item) => item.id !== mapped.id),
+            ]),
+          }));
+
+          const time = mapped.checkInAt ?? '--:--';
+
+          return {
+            ok: true,
+            message:
+              mapped.status === 'LATE'
+                ? `Absen masuk tercatat pukul ${time} — terlambat ${mapped.lateMinutes} menit.`
+                : `Absen masuk tercatat pukul ${time} — tepat waktu.`,
+          };
         }
 
-        const scheduleMinutes = timeToMinutes(role.checkInTime) + role.lateToleranceMinutes;
-        const lateMinutes = Math.max(0, timeToMinutes(time) - scheduleMinutes);
-        const status: Attendance['status'] = lateMinutes > 0 ? 'LATE' : 'ON_TIME';
-
-        const record: Attendance = {
-          id: existing?.id ?? `att-${input.userId}-${today}`,
-          companyId: data.company.id,
-          userId: input.userId,
-          date: today,
-          checkInAt: time,
-          status,
-          lateMinutes,
-          locationId: input.locationId,
-          locationName: input.locationName,
+        const record = await api.checkOut({
           latitude: input.latitude,
           longitude: input.longitude,
-          distanceMeters: input.distanceMeters,
-          selfieCaptured: input.selfieCaptured,
-        };
+          selfie: input.selfie,
+          selfieCaptured: true,
+        });
+        const mapped = mapAttendance(record);
 
         setData((previous) => ({
           ...previous,
-          attendances: [record, ...previous.attendances.filter((item) => item.id !== record.id)].sort((a, b) =>
-            b.date.localeCompare(a.date),
-          ),
+          attendances: sortAttendances([
+            mapped,
+            ...previous.attendances.filter((item) => item.id !== mapped.id),
+          ]),
         }));
 
         return {
           ok: true,
-          message:
-            status === 'LATE'
-              ? `Absen masuk tercatat pukul ${time} — terlambat ${lateMinutes} menit.`
-              : `Absen masuk tercatat pukul ${time} — tepat waktu.`,
+          message: `Absen pulang tercatat pukul ${mapped.checkOutAt ?? '--:--'}.`,
         };
+      } catch (error) {
+        return { ok: false, message: describeError(error) };
       }
-
-      if (!existing?.checkInAt) {
-        return { ok: false, message: 'Belum ada absen masuk hari ini.' };
-      }
-      if (existing.checkOutAt) {
-        return { ok: false, message: `Anda sudah absen pulang pukul ${existing.checkOutAt}.` };
-      }
-
-      setData((previous) => ({
-        ...previous,
-        attendances: previous.attendances.map((record) =>
-          record.id === existing.id
-            ? {
-                ...record,
-                checkOutAt: time,
-                selfieCaptured: input.selfieCaptured,
-                note: record.note,
-              }
-            : record,
-        ),
-      }));
-
-      return { ok: true, message: `Absen pulang tercatat pukul ${time}.` };
     },
-    [data.attendances, data.company.id, data.roles, data.users],
+    [],
   );
 
+  // --- Pengajuan --------------------------------------------------------
+
+  const replaceSubmission = useCallback((submission: Submission) => {
+    setData((previous) => ({
+      ...previous,
+      submissions: sortSubmissions([
+        submission,
+        ...previous.submissions.filter((item) => item.id !== submission.id),
+      ]),
+    }));
+  }, []);
+
+  const refreshSubmissionData = useCallback(async (): Promise<void> => {
+    const [rows, balances] = await Promise.all([api.submissions(), api.leaveBalances()]);
+
+    setData((previous) => ({
+      ...previous,
+      submissions: sortSubmissions(rows.map(mapSubmission)),
+      leaveBalances: balances.data.map((row) =>
+        mapLeaveBalance(row, previous.company.id || session?.companyId || ''),
+      ),
+    }));
+  }, [session]);
+
   const createSubmission = useCallback(
-    (input: NewSubmissionInput): ActionResult => {
-      if (input.days <= 0) return { ok: false, message: 'Jumlah hari pengajuan tidak valid.' };
-      if (input.reason.trim().length < 10) {
-        return { ok: false, message: 'Alasan minimal 10 karakter agar dapat diverifikasi.' };
-      }
-      if (input.type === 'RESIGN' && !input.resignEffectiveDate) {
-        return { ok: false, message: 'Tanggal efektif resign wajib diisi.' };
-      }
-      if (
-        (input.type === 'LEAVE' && input.leaveCategory === 'ANNUAL') &&
-        input.days > 0
-      ) {
-        const balance = data.leaveBalances.find((item) => item.userId === input.userId);
-        const remaining = balance ? balance.totalQuota - balance.used : 0;
-        if (input.days > remaining) {
-          return {
-            ok: false,
-            message: `Saldo cuti tahunan tidak cukup. Sisa ${remaining} hari, diajukan ${input.days} hari.`,
-          };
-        }
-      }
-      if ((input.type === 'SICK' || input.leaveCategory === 'SICK_LEAVE') && !input.attachmentName) {
-        return { ok: false, message: 'Cuti sakit wajib melampirkan surat dokter.' };
-      }
+    async (input: NewSubmissionInput): Promise<ActionResult> => {
+      try {
+        const record = await api.createSubmission({
+          type: input.type,
+          leaveCategory: input.leaveCategory,
+          permissionType: input.permissionType,
+          startDate: input.startDate,
+          endDate: input.endDate,
+          reason: input.reason,
+          resignEffectiveDate: input.resignEffectiveDate,
+          attachmentName: input.attachmentName,
+        });
 
-      const codePrefix =
-        input.type === 'LEAVE'
-          ? 'CUTI'
-          : input.type === 'PERMISSION'
-            ? 'IZIN'
-            : input.type === 'SICK'
-              ? 'SAKIT'
-              : 'RESIGN';
+        const mapped = mapSubmission(record);
+        replaceSubmission(mapped);
 
-      const sequence = data.submissions.length + 1;
-      const submission: Submission = {
-        id: `sub-${Date.now()}`,
-        code: `${codePrefix}-${String(sequence).padStart(3, '0')}`,
-        companyId: data.company.id,
-        userId: input.userId,
-        type: input.type,
-        leaveCategory: input.leaveCategory,
-        permissionType: input.permissionType,
-        startDate: input.startDate,
-        endDate: input.endDate ?? input.startDate,
-        days: input.days,
-        reason: input.reason.trim(),
-        attachmentName: input.attachmentName,
-        resignEffectiveDate: input.resignEffectiveDate,
-        createdAt: new Date().toISOString(),
-        status: 'PENDING_HRD',
-        approvals: [],
-        balanceApplied: false,
-      };
-
-      setData((previous) => ({ ...previous, submissions: [submission, ...previous.submissions] }));
-
-      return {
-        ok: true,
-        message: `Pengajuan ${submission.code} terkirim dan menunggu verifikasi HRD.`,
-        id: submission.id,
-      };
+        return {
+          ok: true,
+          message: `Pengajuan ${mapped.code} berhasil dikirim dan menunggu persetujuan HRD.`,
+          id: mapped.id,
+        };
+      } catch (error) {
+        return { ok: false, message: describeError(error) };
+      }
     },
-    [data.company.id, data.leaveBalances, data.submissions.length],
+    [replaceSubmission],
   );
 
   const cancelSubmission = useCallback(
-    (submissionId: string, actorId: string): ActionResult => {
-      const submission = data.submissions.find((item) => item.id === submissionId);
-      if (!submission) return { ok: false, message: 'Pengajuan tidak ditemukan.' };
-      if (submission.userId !== actorId) {
-        return { ok: false, message: 'Hanya pemilik pengajuan yang dapat membatalkan.' };
-      }
-      if (submission.status !== 'PENDING_HRD') {
-        return {
-          ok: false,
-          message: 'Pengajuan hanya dapat dibatalkan selama masih menunggu verifikasi HRD.',
-        };
-      }
+    async (submissionId: string): Promise<ActionResult> => {
+      try {
+        const record = await api.cancelSubmission(submissionId);
+        const mapped = mapSubmission(record);
+        replaceSubmission(mapped);
 
-      setData((previous) => ({
-        ...previous,
-        submissions: previous.submissions.map((item) =>
-          item.id === submissionId
-            ? { ...item, status: 'CANCELLED', cancelledAt: new Date().toISOString() }
-            : item,
-        ),
-      }));
-
-      return { ok: true, message: 'Pengajuan berhasil dibatalkan.' };
+        return { ok: true, message: `Pengajuan ${mapped.code} dibatalkan.` };
+      } catch (error) {
+        return { ok: false, message: describeError(error) };
+      }
     },
-    [data.submissions],
+    [replaceSubmission],
   );
 
   const decideSubmission = useCallback(
-    (params: {
+    async (params: {
       submissionId: string;
       stage: 'HRD' | 'OWNER';
       decision: 'APPROVED' | 'REJECTED';
       note: string;
       actorId: string;
-    }): ActionResult => {
-      const { submissionId, stage, decision, note, actorId } = params;
-      const submission = data.submissions.find((item) => item.id === submissionId);
-      if (!submission) return { ok: false, message: 'Pengajuan tidak ditemukan.' };
-
-      const actor = data.users.find((user) => user.id === actorId);
-      if (!actor) return { ok: false, message: 'Pengguna tidak ditemukan.' };
-      if (stage === 'HRD' && actor.role !== 'HRD') {
-        return { ok: false, message: 'Verifikasi tahap pertama hanya dapat dilakukan Admin/HRD.' };
-      }
-      if (stage === 'OWNER' && actor.role !== 'OWNER') {
-        return { ok: false, message: 'Persetujuan final hanya dapat dilakukan Owner.' };
-      }
-
-      if (submission.status === 'FULLY_APPROVED' || submission.status === 'REJECTED' || submission.status === 'CANCELLED') {
-        return { ok: false, message: 'Pengajuan ini sudah selesai dan tidak dapat diproses lagi.' };
-      }
-      if (stage === 'HRD' && submission.status !== 'PENDING_HRD') {
-        return { ok: false, message: 'Pengajuan sudah melewati tahap verifikasi HRD.' };
-      }
-      if (stage === 'OWNER' && submission.status !== 'PENDING_OWNER') {
-        return {
-          ok: false,
-          message: 'Owner hanya dapat memproses pengajuan yang telah disetujui HRD.',
-        };
-      }
-
-      const nextStatus: Submission['status'] =
-        decision === 'REJECTED' ? 'REJECTED' : stage === 'HRD' ? 'PENDING_OWNER' : 'FULLY_APPROVED';
-
-      const isAnnualLeave = submission.type === 'LEAVE' && submission.leaveCategory === 'ANNUAL';
-      const shouldApplyBalance = nextStatus === 'FULLY_APPROVED' && isAnnualLeave && !submission.balanceApplied;
-
-      setData((previous) => {
-        const nextSubmissions = previous.submissions.map((item) =>
-          item.id === submissionId
-            ? {
-                ...item,
-                status: nextStatus,
-                balanceApplied: item.balanceApplied || shouldApplyBalance,
-                approvals: [
-                  ...item.approvals,
-                  {
-                    stage,
-                    actorId: actor.id,
-                    actorName: actor.name,
-                    actorRole: actor.role,
-                    decision,
-                    note: note.trim() || (decision === 'APPROVED' ? 'Disetujui.' : 'Ditolak.'),
-                    decidedAt: new Date().toISOString(),
-                  },
-                ],
-              }
-            : item,
+    }): Promise<ActionResult> => {
+      try {
+        const record = await api.decideSubmission(
+          params.submissionId,
+          params.stage,
+          params.decision,
+          params.note || undefined,
         );
 
-        const nextBalances = shouldApplyBalance
-          ? previous.leaveBalances.map((balance) =>
-              balance.userId === submission.userId
-                ? {
-                    ...balance,
-                    used: balance.used + submission.days,
-                    adjustments: [
-                      {
-                        id: `adj-${Date.now()}`,
-                        at: new Date().toISOString(),
-                        byName: 'Sistem (final approval)',
-                        delta: 0,
-                        reason: `Pemakaian cuti tahunan ${submission.days} hari (${submission.code})`,
-                      },
-                      ...balance.adjustments,
-                    ],
-                  }
-                : balance,
-            )
-          : previous.leaveBalances;
+        const mapped = mapSubmission(record);
+        replaceSubmission(mapped);
 
-        return { ...previous, submissions: nextSubmissions, leaveBalances: nextBalances };
-      });
+        await refreshSubmissionData();
 
-      if (nextStatus === 'PENDING_OWNER') {
-        return { ok: true, message: 'Disetujui HRD. Pengajuan diteruskan ke Owner.' };
-      }
-      if (nextStatus === 'FULLY_APPROVED') {
-        return {
-          ok: true,
-          message: shouldApplyBalance
-            ? `Disetujui penuh. Kuota cuti tahunan berkurang ${submission.days} hari.`
-            : 'Pengajuan disetujui penuh.',
-        };
-      }
-      return { ok: true, message: 'Pengajuan ditolak. Alur persetujuan dihentikan.' };
-    },
-    [data.submissions, data.users],
-  );
+        if (mapped.status === 'REJECTED') {
+          return { ok: true, message: `Pengajuan ${mapped.code} ditolak.` };
+        }
 
-  const adjustLeaveBalance = useCallback(
-    (params: { userId: string; delta: number; reason: string; actorName: string }): ActionResult => {
-      const { userId, delta, reason, actorName } = params;
-      if (!Number.isFinite(delta) || delta === 0) {
-        return { ok: false, message: 'Penyesuaian harus berupa angka selain 0.' };
-      }
-      if (reason.trim().length < 5) {
-        return { ok: false, message: 'Alasan penyesuaian minimal 5 karakter.' };
-      }
-      const balance = data.leaveBalances.find((item) => item.userId === userId);
-      if (!balance) return { ok: false, message: 'Saldo cuti karyawan tidak ditemukan.' };
-      if (balance.totalQuota + delta - balance.used < 0) {
-        return { ok: false, message: 'Penyesuaian membuat sisa saldo menjadi negatif.' };
-      }
-
-      setData((previous) => ({
-        ...previous,
-        leaveBalances: previous.leaveBalances.map((item) =>
-          item.userId === userId
-            ? {
-                ...item,
-                totalQuota: item.totalQuota + delta,
-                adjustments: [
-                  {
-                    id: `adj-${Date.now()}`,
-                    at: new Date().toISOString(),
-                    byName: actorName,
-                    delta,
-                    reason: reason.trim(),
-                  },
-                  ...item.adjustments,
-                ],
-              }
-            : item,
-        ),
-      }));
-
-      return { ok: true, message: `Saldo cuti diperbarui (${delta > 0 ? '+' : ''}${delta} hari).` };
-    },
-    [data.leaveBalances],
-  );
-
-  const saveUser = useCallback(
-    (payload: UserPayload): ActionResult => {
-      if (payload.name.trim().length < 3) return { ok: false, message: 'Nama minimal 3 karakter.' };
-      if (!isValidEmail(payload.email)) return { ok: false, message: 'Format email tidak valid.' };
-      if (payload.phone.replace(/\D/g, '').length < 9) {
-        return { ok: false, message: 'Nomor telepon minimal 9 digit.' };
-      }
-      if (payload.username.trim().length < 4) {
-        return { ok: false, message: 'Username minimal 4 karakter.' };
-      }
-      if (isEmailTaken(payload.email, payload.id)) return { ok: false, message: 'Email sudah digunakan akun lain.' };
-      if (isUsernameTaken(payload.username, payload.id)) {
-        return { ok: false, message: 'Username sudah digunakan akun lain.' };
-      }
-      if (payload.employeeCode.trim().length < 3) {
-        return { ok: false, message: 'Kode karyawan minimal 3 karakter.' };
-      }
-      if (!payload.id && !payload.password) {
-        return { ok: false, message: 'Password awal wajib diisi untuk akun baru.' };
-      }
-      if (payload.role === 'EMPLOYEE' && !payload.jobRoleId) {
-        return { ok: false, message: 'Role kerja wajib dipilih untuk karyawan.' };
-      }
-
-      const resultMessage = payload.id
-        ? 'Perubahan data berhasil disimpan.'
-        : 'Pengguna baru berhasil ditambahkan.';
-
-      setData((previous) => {
-        if (payload.id) {
-          const exists = previous.users.some((user) => user.id === payload.id);
-          if (!exists) return previous;
+        if (mapped.status === 'PENDING_OWNER') {
           return {
-            ...previous,
-            users: previous.users.map((user) =>
-              user.id === payload.id
-                ? {
-                    ...user,
-                    ...payload,
-                    password: payload.password || user.password,
-                  }
-                : user,
-            ),
+            ok: true,
+            message: `Pengajuan ${mapped.code} disetujui HRD dan diteruskan ke Owner.`,
           };
         }
 
-        const newUser: User = {
-          id: `u-${Date.now()}`,
-          companyId: previous.company.id,
-          name: payload.name.trim(),
-          email: payload.email.trim(),
-          username: payload.username.trim(),
-          password: payload.password ?? 'demo12345',
-          role: payload.role,
-          employeeCode: payload.employeeCode.trim(),
-          jobRoleId: payload.jobRoleId,
-          locationId: payload.locationId,
-          phone: payload.phone,
-          joinDate: payload.joinDate,
-          birthDate: payload.birthDate,
-          address: payload.address,
-          employmentType: payload.employmentType,
-          status: payload.status,
-          notes: payload.notes,
-        };
+        if (mapped.status === 'FULLY_APPROVED') {
+          return { ok: true, message: `Pengajuan ${mapped.code} disetujui penuh.` };
+        }
 
-        const role = payload.jobRoleId ? previous.roles.find((item) => item.id === payload.jobRoleId) : undefined;
+        return { ok: true, message: `Keputusan untuk ${mapped.code} tersimpan.` };
+      } catch (error) {
+        return { ok: false, message: describeError(error) };
+      }
+    },
+    [refreshSubmissionData, replaceSubmission],
+  );
 
-        const nextCompensations =
-          payload.role === 'HRD'
-            ? [
-                ...previous.hrdCompensations,
-                {
-                  userId: newUser.id,
-                  baseSalary: 5_500_000,
-                  positionAllowance: 400_000,
-                  transportAllowance: 450_000,
-                  mealAllowance: 400_000,
-                  bpjsDeduction: 180_000,
-                  updatedAt: new Date().toISOString(),
-                },
-              ]
-            : previous.hrdCompensations;
+  // --- Saldo cuti -------------------------------------------------------
 
-        const nextBalances =
-          payload.role === 'EMPLOYEE' && role
-            ? [
-                ...previous.leaveBalances,
-                {
-                  id: `lb-${newUser.id}`,
-                  companyId: previous.company.id,
-                  userId: newUser.id,
-                  year: new Date().getFullYear(),
-                  totalQuota: role.annualLeaveQuota,
-                  used: 0,
-                  adjustments: [],
-                },
-              ]
-            : previous.leaveBalances;
+  const adjustLeaveBalance = useCallback(
+    async (params: {
+      userId: string;
+      delta: number;
+      reason: string;
+      actorName: string;
+    }): Promise<ActionResult> => {
+      try {
+        await api.adjustLeaveBalance(params.userId, params.delta, params.reason);
+        await refreshSubmissionData();
 
         return {
-          ...previous,
-          users: [...previous.users, newUser],
-          hrdCompensations: nextCompensations,
-          leaveBalances: nextBalances,
+          ok: true,
+          message: `Saldo cuti ${params.delta > 0 ? 'ditambah' : 'dikurangi'} ${Math.abs(params.delta)} hari.`,
         };
-      });
-
-      return { ok: true, message: resultMessage };
+      } catch (error) {
+        return { ok: false, message: describeError(error) };
+      }
     },
-    [isEmailTaken, isUsernameTaken],
+    [refreshSubmissionData],
+  );
+
+  // --- Data master ------------------------------------------------------
+
+  const saveUser = useCallback(
+    async (payload: UserPayload): Promise<ActionResult> => {
+      const isHrd = payload.role === 'HRD';
+
+      const body: Record<string, unknown> = {
+        name: payload.name.trim(),
+        email: payload.email.trim(),
+        username: payload.username.trim(),
+        employeeCode: payload.employeeCode.trim(),
+        phone: payload.phone.trim(),
+        joinDate: payload.joinDate,
+        employmentType: payload.employmentType,
+        status: payload.status,
+        notes: payload.notes ?? null,
+      };
+
+      if (payload.password) body.password = payload.password;
+
+      if (!isHrd) {
+        body.jobRoleId = payload.jobRoleId;
+        body.locationId = payload.locationId ?? null;
+        body.birthDate = payload.birthDate ?? null;
+        body.address = payload.address ?? null;
+      }
+
+      try {
+        if (isHrd) {
+          if (payload.id) {
+            await api.updateHrd(payload.id, body);
+          } else {
+            await api.createHrd({
+              ...body,
+              // Kompensasi awal dapat diubah pada menu Kompensasi HRD.
+              baseSalary: 5_500_000,
+              positionAllowance: 400_000,
+              transportAllowance: 450_000,
+              mealAllowance: 400_000,
+              bpjsDeduction: 180_000,
+            });
+          }
+        } else if (payload.id) {
+          await api.updateEmployee(payload.id, body);
+        } else {
+          await api.createEmployee(body);
+        }
+
+        await reloadWorkspace();
+
+        return {
+          ok: true,
+          message: isHrd ? 'Akun HRD berhasil disimpan.' : 'Data karyawan berhasil disimpan.',
+        };
+      } catch (error) {
+        return { ok: false, message: describeError(error) };
+      }
+    },
+    [reloadWorkspace],
   );
 
   const setUserStatus = useCallback(
-    (userId: string, status: AccountStatus): ActionResult => {
-      const user = data.users.find((item) => item.id === userId);
-      if (!user) return { ok: false, message: 'Pengguna tidak ditemukan.' };
-      if (user.role === 'OWNER') return { ok: false, message: 'Akun Owner tidak dapat dinonaktifkan.' };
-      if (user.id === sessionUserId && status === 'INACTIVE') {
-        return { ok: false, message: 'Anda tidak dapat menonaktifkan akun yang sedang digunakan.' };
+    async (userId: string, status: AccountStatus): Promise<ActionResult> => {
+      try {
+        await api.setEmployeeStatus(userId, status);
+        await reloadWorkspace();
+
+        return {
+          ok: true,
+          message:
+            status === 'ACTIVE'
+              ? 'Akun diaktifkan kembali.'
+              : 'Akun dinonaktifkan. Karyawan tidak dapat login.',
+        };
+      } catch (error) {
+        return { ok: false, message: describeError(error) };
       }
-
-      setData((previous) => ({
-        ...previous,
-        users: previous.users.map((item) => (item.id === userId ? { ...item, status } : item)),
-      }));
-
-      return {
-        ok: true,
-        message: status === 'ACTIVE' ? 'Akun diaktifkan kembali.' : 'Akun berhasil dinonaktifkan.',
-      };
     },
-    [data.users, sessionUserId],
+    [reloadWorkspace],
   );
 
   const deleteUser = useCallback(
-    (userId: string): ActionResult => {
-      const user = data.users.find((item) => item.id === userId);
-      if (!user) return { ok: false, message: 'Pengguna tidak ditemukan.' };
-      if (user.role === 'OWNER') return { ok: false, message: 'Akun Owner tidak dapat dihapus.' };
-      if (user.id === sessionUserId) return { ok: false, message: 'Tidak dapat menghapus akun aktif.' };
-      if (user.isDemoAccount) {
-        return { ok: false, message: 'Akun demo tidak dapat dihapus agar alur uji tetap tersedia.' };
+    async (userId: string): Promise<ActionResult> => {
+      const target = data.users.find((user) => user.id === userId);
+
+      try {
+        if (target?.role === 'HRD') {
+          await api.deleteHrd(userId);
+        } else {
+          await api.deleteEmployee(userId);
+        }
+
+        await reloadWorkspace();
+
+        return { ok: true, message: 'Akun berhasil dihapus.' };
+      } catch (error) {
+        return { ok: false, message: describeError(error) };
       }
-
-      setData((previous) => ({
-        ...previous,
-        users: previous.users.filter((item) => item.id !== userId),
-        leaveBalances: previous.leaveBalances.filter((item) => item.userId !== userId),
-        hrdCompensations: previous.hrdCompensations.filter((item) => item.userId !== userId),
-      }));
-
-      return { ok: true, message: 'Data karyawan dihapus.' };
     },
-    [data.users, sessionUserId],
+    [data.users, reloadWorkspace],
   );
 
   const saveRole = useCallback(
-    (payload: RolePayload): ActionResult => {
-      if (payload.name.trim().length < 3) return { ok: false, message: 'Nama role minimal 3 karakter.' };
-      if (!/^\d{2}:\d{2}$/.test(payload.checkInTime) || !/^\d{2}:\d{2}$/.test(payload.checkOutTime)) {
-        return { ok: false, message: 'Format jam masuk/pulang harus HH:mm.' };
-      }
-      if (timeToMinutes(payload.checkOutTime) <= timeToMinutes(payload.checkInTime)) {
-        return { ok: false, message: 'Jam pulang harus lebih besar dari jam masuk.' };
-      }
-      if (payload.baseSalary <= 0) return { ok: false, message: 'Gaji pokok harus lebih dari 0.' };
-      if (payload.annualLeaveQuota < 0) return { ok: false, message: 'Kuota cuti tidak boleh negatif.' };
-      if (!payload.locationId) return { ok: false, message: 'Lokasi kerja wajib dipilih.' };
-      const duplicated = data.roles.some(
-        (role) => role.name.toLowerCase() === payload.name.trim().toLowerCase() && role.id !== payload.id,
-      );
-      if (duplicated) return { ok: false, message: 'Nama role sudah digunakan.' };
+    async (payload: RolePayload): Promise<ActionResult> => {
+      const body: Record<string, unknown> = {
+        name: payload.name.trim(),
+        department: payload.department.trim(),
+        checkInTime: payload.checkInTime,
+        checkOutTime: payload.checkOutTime,
+        lateToleranceMinutes: payload.lateToleranceMinutes,
+        salaryBasis: payload.salaryBasis,
+        baseSalary: payload.baseSalary,
+        transportAllowance: payload.transportAllowance,
+        mealAllowance: payload.mealAllowance,
+        latePenaltyPerMinute: payload.latePenaltyPerMinute,
+        annualLeaveQuota: payload.annualLeaveQuota,
+        locationId: payload.locationId ? Number(payload.locationId) : null,
+        status: payload.status,
+      };
 
-      setData((previous) => {
+      try {
         if (payload.id) {
-          return {
-            ...previous,
-            roles: previous.roles.map((role) =>
-              role.id === payload.id ? { ...role, ...payload, name: payload.name.trim() } : role,
-            ),
-          };
+          await api.updateRole(payload.id, body);
+        } else {
+          await api.createRole(body);
         }
-        return {
-          ...previous,
-          roles: [
-            ...previous.roles,
-            {
-              ...payload,
-              id: `role-${Date.now()}`,
-              companyId: previous.company.id,
-              name: payload.name.trim(),
-              createdAt: new Date().toISOString(),
-            },
-          ],
-        };
-      });
 
-      return { ok: true, message: payload.id ? 'Role berhasil diperbarui.' : 'Role baru berhasil dibuat.' };
+        await reloadWorkspace();
+
+        return { ok: true, message: 'Role kerja berhasil disimpan.' };
+      } catch (error) {
+        return { ok: false, message: describeError(error) };
+      }
     },
-    [data.roles],
+    [reloadWorkspace],
   );
 
   const deleteRole = useCallback(
-    (roleId: string): ActionResult => {
-      const used = data.users.some((user) => user.jobRoleId === roleId);
-      if (used) return { ok: false, message: 'Role masih digunakan karyawan. Pindahkan karyawan terlebih dahulu.' };
+    async (roleId: string): Promise<ActionResult> => {
+      try {
+        const response = await api.deleteRole(roleId);
+        await reloadWorkspace();
 
-      setData((previous) => ({ ...previous, roles: previous.roles.filter((role) => role.id !== roleId) }));
-      return { ok: true, message: 'Role berhasil dihapus.' };
+        return { ok: true, message: response.message ?? 'Role kerja dihapus.' };
+      } catch (error) {
+        return { ok: false, message: describeError(error) };
+      }
     },
-    [data.users],
+    [reloadWorkspace],
   );
 
   const saveLocation = useCallback(
-    (payload: LocationPayload): ActionResult => {
-      if (payload.name.trim().length < 3) return { ok: false, message: 'Nama lokasi minimal 3 karakter.' };
-      if (payload.address.trim().length < 5) return { ok: false, message: 'Alamat lokasi minimal 5 karakter.' };
-      if (payload.latitude < -90 || payload.latitude > 90) {
-        return { ok: false, message: 'Latitude harus di antara -90 dan 90.' };
-      }
-      if (payload.longitude < -180 || payload.longitude > 180) {
-        return { ok: false, message: 'Longitude harus di antara -180 dan 180.' };
-      }
-      if (payload.radiusMeters < 20 || payload.radiusMeters > 5000) {
-        return { ok: false, message: 'Radius geofencing harus 20–5000 meter.' };
-      }
+    async (payload: LocationPayload): Promise<ActionResult> => {
+      const body: Record<string, unknown> = {
+        name: payload.name.trim(),
+        type: payload.type,
+        address: payload.address.trim(),
+        latitude: payload.latitude,
+        longitude: payload.longitude,
+        radiusMeters: payload.radiusMeters,
+        status: payload.status,
+      };
 
-      setData((previous) => {
+      try {
         if (payload.id) {
-          return {
-            ...previous,
-            locations: previous.locations.map((location) =>
-              location.id === payload.id ? { ...location, ...payload, name: payload.name.trim() } : location,
-            ),
-          };
+          await api.updateLocation(payload.id, body);
+        } else {
+          await api.createLocation(body);
         }
-        return {
-          ...previous,
-          locations: [
-            ...previous.locations,
-            {
-              ...payload,
-              id: `loc-${Date.now()}`,
-              companyId: previous.company.id,
-              name: payload.name.trim(),
-            },
-          ],
-        };
-      });
 
-      return { ok: true, message: payload.id ? 'Lokasi kerja diperbarui.' : 'Lokasi kerja ditambahkan.' };
+        await reloadWorkspace();
+
+        return { ok: true, message: 'Lokasi kerja berhasil disimpan.' };
+      } catch (error) {
+        return { ok: false, message: describeError(error) };
+      }
     },
-    [],
+    [reloadWorkspace],
   );
 
   const deleteLocation = useCallback(
-    (locationId: string): ActionResult => {
-      const usedByRole = data.roles.some((role) => role.locationId === locationId);
-      const usedByUser = data.users.some((user) => user.locationId === locationId);
-      if (usedByRole || usedByUser) {
-        return { ok: false, message: 'Lokasi masih dipakai role/karyawan sehingga tidak dapat dihapus.' };
+    async (locationId: string): Promise<ActionResult> => {
+      try {
+        const response = await api.deleteLocation(locationId);
+        await reloadWorkspace();
+
+        return { ok: true, message: response.message ?? 'Lokasi kerja dihapus.' };
+      } catch (error) {
+        return { ok: false, message: describeError(error) };
       }
-      setData((previous) => ({
-        ...previous,
-        locations: previous.locations.filter((location) => location.id !== locationId),
-      }));
-      return { ok: true, message: 'Lokasi kerja dihapus.' };
     },
-    [data.roles, data.users],
+    [reloadWorkspace],
   );
 
   const updateHrdCompensation = useCallback(
-    (userId: string, payload: Omit<HrdCompensation, 'userId' | 'updatedAt'>): ActionResult => {
-      if (payload.baseSalary <= 0) return { ok: false, message: 'Gaji pokok harus lebih dari 0.' };
-      if (payload.bpjsDeduction < 0) return { ok: false, message: 'Potongan BPJS tidak boleh negatif.' };
+    async (
+      userId: string,
+      payload: Omit<HrdCompensation, 'userId' | 'updatedAt'>,
+    ): Promise<ActionResult> => {
+      try {
+        const response = await api.updateHrdCompensation(userId, payload);
 
-      setData((previous) => ({
-        ...previous,
-        hrdCompensations: previous.hrdCompensations.some((item) => item.userId === userId)
-          ? previous.hrdCompensations.map((item) =>
-              item.userId === userId ? { ...item, ...payload, updatedAt: new Date().toISOString() } : item,
-            )
-          : [
-              ...previous.hrdCompensations,
-              { userId, ...payload, updatedAt: new Date().toISOString() },
-            ],
-      }));
+        const compensation = mapCompensation(response.data);
 
-      return { ok: true, message: 'Komponen gaji HRD berhasil disimpan.' };
+        setData((previous) => ({
+          ...previous,
+          hrdCompensations: compensation
+            ? [
+                compensation,
+                ...previous.hrdCompensations.filter((item) => item.userId !== compensation.userId),
+              ]
+            : previous.hrdCompensations,
+        }));
+
+        return { ok: true, message: 'Kompensasi HRD berhasil diperbarui.' };
+      } catch (error) {
+        return { ok: false, message: describeError(error) };
+      }
     },
     [],
   );
 
-  const updateCompany = useCallback((patch: Partial<Company>): ActionResult => {
-    if (patch.name !== undefined && patch.name.trim().length < 3) {
-      return { ok: false, message: 'Nama perusahaan minimal 3 karakter.' };
-    }
-    if (patch.email !== undefined && !isValidEmail(patch.email)) {
-      return { ok: false, message: 'Format email perusahaan tidak valid.' };
-    }
-    if (patch.workDaysPerMonth !== undefined && (patch.workDaysPerMonth < 1 || patch.workDaysPerMonth > 31)) {
-      return { ok: false, message: 'Hari kerja per bulan harus 1–31.' };
-    }
+  const updateCompany = useCallback(
+    async (patch: Partial<Company>): Promise<ActionResult> => {
+      const body: Record<string, unknown> = {};
 
-    setData((previous) => ({ ...previous, company: { ...previous.company, ...patch } }));
-    return { ok: true, message: 'Pengaturan perusahaan disimpan.' };
-  }, []);
+      if (patch.name !== undefined) body.name = patch.name;
+      if (patch.legalName !== undefined) body.legalName = patch.legalName;
+      if (patch.industry !== undefined) body.industry = patch.industry;
+      if (patch.address !== undefined) body.address = patch.address;
+      if (patch.city !== undefined) body.city = patch.city;
+      if (patch.phone !== undefined) body.phone = patch.phone;
+      if (patch.email !== undefined) body.email = patch.email;
+      if (patch.taxId !== undefined) body.taxId = patch.taxId;
+      if (patch.timezone !== undefined) body.timezone = patch.timezone;
+      if (patch.workDaysPerMonth !== undefined) body.workDaysPerMonth = patch.workDaysPerMonth;
+      if (patch.logoInitials !== undefined) body.logoInitials = patch.logoInitials;
+      if (patch.establishedYear !== undefined) body.establishedYear = patch.establishedYear;
 
-  const updateProfile = useCallback((userId: string, patch: Partial<User>): ActionResult => {
-    if (patch.email && !isValidEmail(patch.email)) {
-      return { ok: false, message: 'Format email tidak valid.' };
-    }
-    if (patch.name !== undefined && patch.name.trim().length < 3) {
-      return { ok: false, message: 'Nama minimal 3 karakter.' };
-    }
-    if (patch.phone !== undefined && patch.phone.replace(/\D/g, '').length < 9) {
-      return { ok: false, message: 'Nomor telepon minimal 9 digit.' };
-    }
+      try {
+        const response = await api.updateCompany(body);
+        const company = mapCompany(response.company);
 
-    setData((previous) => ({
-      ...previous,
-      users: previous.users.map((user) => (user.id === userId ? { ...user, ...patch } : user)),
-    }));
-    return { ok: true, message: 'Profil berhasil diperbarui.' };
-  }, []);
+        setData((previous) => ({ ...previous, company }));
 
-  const resetDemoData = useCallback(() => {
-    setData(createSeedData());
-  }, []);
+        return { ok: true, message: 'Profil perusahaan berhasil diperbarui.' };
+      } catch (error) {
+        return { ok: false, message: describeError(error) };
+      }
+    },
+    [],
+  );
+
+  const updateProfile = useCallback(
+    async (userId: string, patch: Partial<User>): Promise<ActionResult> => {
+      if (session && String(session.id) !== userId) {
+        return { ok: false, message: 'Hanya dapat mengubah profil sendiri.' };
+      }
+
+      const body: Record<string, unknown> = {};
+
+      if (patch.name !== undefined) body.name = patch.name;
+      if (patch.email !== undefined) body.email = patch.email;
+      if (patch.phone !== undefined) body.phone = patch.phone;
+      if (patch.address !== undefined) body.address = patch.address;
+      if (patch.birthDate !== undefined) body.birthDate = patch.birthDate;
+      if (patch.emergencyContact !== undefined) body.emergencyContact = patch.emergencyContact;
+
+      try {
+        const response = await api.updateProfile(body);
+
+        setData((previous) => ({
+          ...previous,
+          users: previous.users.map((user) =>
+            user.id === response.user.id ? mapUser(response.user) : user,
+          ),
+        }));
+
+        setSession(response.user);
+
+        return { ok: true, message: 'Profil berhasil diperbarui.' };
+      } catch (error) {
+        return { ok: false, message: describeError(error) };
+      }
+    },
+    [session],
+  );
 
   const value = useMemo<AppContextValue>(
     () => ({
       ...data,
       sessionUser,
+      isRestoring,
       isAuthenticating,
       authError,
       login,
       logout,
-      switchDemoAccount,
       checkAttendance,
       createSubmission,
       cancelSubmission,
@@ -972,7 +962,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       updateHrdCompensation,
       updateCompany,
       updateProfile,
-      resetDemoData,
+
       getUser,
       getRole,
       getLocation,
@@ -986,11 +976,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [
       data,
       sessionUser,
+      isRestoring,
       isAuthenticating,
       authError,
       login,
       logout,
-      switchDemoAccount,
+
       checkAttendance,
       createSubmission,
       cancelSubmission,
@@ -1006,7 +997,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       updateHrdCompensation,
       updateCompany,
       updateProfile,
-      resetDemoData,
+
       getUser,
       getRole,
       getLocation,
@@ -1034,7 +1025,7 @@ export function useSessionUser(): User {
   return sessionUser;
 }
 
-export const demoHelper = {
+export const formHelper = {
   nextEmployeeCode(existing: User[], year: number): string {
     const codes = existing
       .map((user) => user.employeeCode)
@@ -1052,3 +1043,5 @@ export const demoHelper = {
   },
   inclusiveDays,
 };
+
+export type { Attendance };

@@ -13,7 +13,7 @@ import { DetailRow, Divider, SectionHeader } from '../../components/common/Secti
 import { SelectField } from '../../components/common/SelectField';
 import { TextField } from '../../components/common/TextField';
 import { useToast } from '../../components/common/Toast';
-import { DEMO_PAYROLL_RULES } from '../../constants';
+import { PAYROLL_RULES } from '../../constants';
 import { useApp, useSessionUser } from '../../store/AppProvider';
 import { colors, radius, spacing } from '../../theme';
 import { parseNumberInput } from '../../utils/format';
@@ -63,7 +63,7 @@ export function CompanySettingsScreen() {
     );
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const nextErrors: Record<string, string> = {};
     if (form.name.trim().length < 3) nextErrors.name = 'Nama perusahaan minimal 3 karakter.';
     if (!isValidEmail(form.email)) nextErrors.email = 'Format email perusahaan tidak valid.';
@@ -73,7 +73,7 @@ export function CompanySettingsScreen() {
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    const result = updateCompany({
+    const result = await updateCompany({
       name: form.name.trim(),
       legalName: form.legalName.trim(),
       industry: form.industry.trim(),
@@ -110,7 +110,7 @@ export function CompanySettingsScreen() {
               {company.industry} · sejak {company.establishedYear}
             </AppText>
           </View>
-          <Badge label="Tenant demo" tone="dark" />
+          <Badge label="Tenant aktif" tone="dark" />
         </View>
         <View style={styles.heroStats}>
           <View style={styles.heroStat}>
@@ -128,7 +128,7 @@ export function CompanySettingsScreen() {
         </View>
       </Card>
 
-      <SectionHeader title="Identitas perusahaan" subtitle="Tampil pada header dan dokumen simulasi" />
+      <SectionHeader title="Identitas perusahaan" subtitle="Tampil pada header dan dokumen perusahaan" />
       <Card style={styles.formCard}>
         <TextField label="Nama perusahaan" value={form.name} onChangeText={(value) => update('name', value)} error={errors.name} required />
         <TextField label="Nama legal" value={form.legalName} onChangeText={(value) => update('legalName', value)} />
@@ -155,7 +155,7 @@ export function CompanySettingsScreen() {
         <TextField label="Kota" value={form.city} onChangeText={(value) => update('city', value)} />
       </Card>
 
-      <SectionHeader title="Kebijakan operasional" subtitle="Dipakai sebagai asumsi perhitungan demo" />
+      <SectionHeader title="Kebijakan operasional" subtitle="Dipakai sebagai asumsi perhitungan payroll" />
       <Card style={styles.formCard}>
         <TextField
           label="Hari kerja per bulan"
@@ -163,7 +163,7 @@ export function CompanySettingsScreen() {
           onChangeText={(value) => update('workDaysPerMonth', value)}
           keyboardType="number-pad"
           error={errors.workDaysPerMonth}
-          helper="Dipakai untuk konversi gaji bulanan ke gaji harian (asumsi demo)."
+          helper="Dipakai untuk konversi gaji bulanan ke gaji harian (asumsi perusahaan)."
           required
         />
         <SelectField
@@ -174,9 +174,9 @@ export function CompanySettingsScreen() {
         />
       </Card>
 
-      <SectionHeader title="Aturan payroll demo" />
+      <SectionHeader title="Aturan rekap payroll" />
       <Card>
-        {DEMO_PAYROLL_RULES.map((rule, index) => (
+        {PAYROLL_RULES.map((rule, index) => (
           <View key={rule} style={styles.rule}>
             <View style={styles.ruleNumber}>
               <AppText style={styles.ruleNumberText}>{index + 1}</AppText>
@@ -195,7 +195,7 @@ export function CompanySettingsScreen() {
         style={{ marginTop: spacing.md }}
         icon={Info}
         tone="neutral"
-        body="Perubahan perusahaan hanya berlaku pada state mock aplikasi ini dan belum tersinkron ke server mana pun."
+        body="Perubahan perusahaan langsung tersimpan di server dan berlaku untuk seluruh pengguna tenant."
       />
     </Screen>
   );

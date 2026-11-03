@@ -84,7 +84,7 @@ export function addMonths(iso: string, amount: number): string {
   return toISODate(date);
 }
 
-/** Jumlah hari inklusif (asumsi demo: tanpa perhitungan hari libur nasional). */
+/** Jumlah hari inklusif (tanpa perhitungan hari libur nasional). */
 export function inclusiveDays(startISO: string, endISO: string): number {
   const start = parseISODate(startISO).getTime();
   const end = parseISODate(endISO).getTime();

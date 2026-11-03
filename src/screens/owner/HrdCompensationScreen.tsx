@@ -48,7 +48,7 @@ const FIELDS: {
   {
     key: 'bpjsDeduction',
     label: 'Potongan BPJS',
-    helper: 'Potongan simulasi yang dikurangkan dari take home pay.',
+    helper: 'Potongan yang dikurangkan dari take home pay.',
     deduction: true,
   },
 ];
@@ -105,7 +105,7 @@ export function HrdCompensationScreen() {
         <EmptyState
           icon={Wallet}
           title="Akun HRD tidak ditemukan"
-          description="Data mungkin sudah dihapus dari mock state."
+          description="Data mungkin sudah dihapus dari server."
         />
       </Screen>
     );
@@ -117,10 +117,10 @@ export function HrdCompensationScreen() {
     setErrors((previous) => ({ ...previous, [key]: '' }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const nextErrors: Record<string, string> = {};
     if (numbers.baseSalary <= 0) nextErrors.baseSalary = 'Gaji pokok harus lebih dari 0.';
-    if (numbers.baseSalary > 500_000_000) nextErrors.baseSalary = 'Nominal melebihi batas simulasi.';
+    if (numbers.baseSalary > 500_000_000) nextErrors.baseSalary = 'Nominal melebihi batas wajar.';
     if (numbers.bpjsDeduction > earnings) {
       nextErrors.bpjsDeduction = 'Potongan tidak boleh melebihi total pendapatan.';
     }
@@ -130,7 +130,7 @@ export function HrdCompensationScreen() {
       return;
     }
 
-    const result = updateHrdCompensation(hrd.id, numbers);
+    const result = await updateHrdCompensation(hrd.id, numbers);
     showToast(result.message, result.ok ? 'success' : 'error');
     if (result.ok) navigation.goBack();
   };
@@ -149,7 +149,7 @@ export function HrdCompensationScreen() {
       <Card tone="dark" style={styles.hero}>
         <View style={styles.heroRow}>
           <View style={{ flex: 1, gap: 2 }}>
-            <AppText style={styles.heroEyebrow}>TAKE HOME SIMULASI / BULAN</AppText>
+            <AppText style={styles.heroEyebrow}>TAKE HOME / BULAN</AppText>
             <AppText style={styles.heroValue}>Rp {formatNumber(takeHome)}</AppText>
             <AppText style={styles.heroHint}>
               Pendapatan Rp {formatNumber(earnings)} − potongan BPJS Rp {formatNumber(numbers.bpjsDeduction)}
@@ -255,7 +255,7 @@ export function HrdCompensationScreen() {
         style={{ marginTop: spacing.md }}
         icon={ShieldCheck}
         tone="warning"
-        body="Perubahan komponen gaji langsung memengaruhi rekap payroll periode berjalan pada mock state. Tidak ada proses penggajian atau transfer dana nyata."
+        body="Perubahan komponen gaji langsung memengaruhi rekap payroll periode berjalan di server. Tidak ada proses penggajian atau transfer dana nyata."
       />
     </Screen>
   );
@@ -283,7 +283,7 @@ function PayrollPreview({
         />
       ))}
       <Divider />
-      <DetailRow label="Take home simulasi" value={`Rp ${formatNumber(total)}`} strong />
+      <DetailRow label="Take home" value={`Rp ${formatNumber(total)}`} strong />
       <DetailRow label="Hari kerja acuan" value={`${workDays} hari`} />
       <DetailRow label="Gaji pokok harian (acuan)" value={`Rp ${formatNumber(dailyBase)}`} />
     </View>

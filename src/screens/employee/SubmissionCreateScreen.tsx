@@ -87,7 +87,7 @@ export function SubmissionCreateScreen() {
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const nextErrors: Record<string, string> = {};
     if (reason.trim().length < 10) nextErrors.reason = 'Alasan minimal 10 karakter.';
     if (type !== 'RESIGN' && days <= 0) nextErrors.endDate = 'Tanggal selesai harus setelah tanggal mulai.';
@@ -97,7 +97,7 @@ export function SubmissionCreateScreen() {
     if (type === 'LEAVE' && leaveCategory === 'ANNUAL' && days > remaining) {
       nextErrors.days = `Sisa cuti tahunan Anda ${remaining} hari, pengajuan ${days} hari.`;
     }
-    if (isSick && !attachmentName) nextErrors.attachment = 'Surat dokter wajib dilampirkan (simulasi).';
+    if (isSick && !attachmentName) nextErrors.attachment = 'Surat dokter wajib dilampirkan.';
     if (type === 'RESIGN' && !resignDate) nextErrors.resignDate = 'Tanggal efektif resign wajib diisi.';
 
     setErrors(nextErrors);
@@ -106,7 +106,7 @@ export function SubmissionCreateScreen() {
       return;
     }
 
-    const result = createSubmission({
+    const result = await createSubmission({
       userId: user.id,
       type,
       leaveCategory: type === 'LEAVE' ? leaveCategory : isSick ? 'SICK_LEAVE' : undefined,
@@ -194,7 +194,7 @@ export function SubmissionCreateScreen() {
             required
             options={PERMISSION_TYPES.map((item) => ({ value: item, label: item }))}
             onChange={setPermissionType}
-            helper="Izin pribadi tidak mengurangi kuota tahunan, namun memengaruhi simulasi payroll."
+            helper="Izin pribadi tidak mengurangi kuota tahunan, namun memengaruhi perhitungan payroll."
           />
         ) : null}
 
@@ -263,7 +263,7 @@ export function SubmissionCreateScreen() {
         </View>
         {errors.days ? <AppText style={styles.errorText}>{errors.days}</AppText> : null}
         <AppText variant="caption">
-          Perhitungan demo belum mengecualikan hari libur nasional atau akhir pekan.
+          Perhitungan belum mengecualikan hari libur nasional atau akhir pekan.
         </AppText>
       </Card>
 
@@ -336,7 +336,7 @@ export function SubmissionCreateScreen() {
                 resetErrors('attachment');
               }}
               accessibilityRole="button"
-              accessibilityLabel="Lampirkan surat dokter simulasi"
+              accessibilityLabel="Lampirkan surat dokter"
               style={({ pressed }) => [
                 styles.attachment,
                 attachmentName ? styles.attachmentActive : null,
@@ -350,10 +350,10 @@ export function SubmissionCreateScreen() {
               />
               <View style={{ flex: 1 }}>
                 <AppText variant="smallStrong" color={attachmentName ? colors.accentDark : colors.text}>
-                  {attachmentName ?? 'Lampirkan surat dokter (simulasi)'}
+                  {attachmentName ?? 'Lampirkan surat dokter'}
                 </AppText>
                 <AppText variant="caption">
-                  {attachmentName ? 'Berkas simulasi siap dikirim' : 'Tidak ada unggahan file sungguhan'}
+                  {attachmentName ? 'Nama lampiran siap dikirim' : 'Unggahan file belum tersedia'}
                 </AppText>
               </View>
               <Badge label={attachmentName ? 'Terlampir' : 'Wajib'} tone={attachmentName ? 'success' : 'warning'} />
@@ -364,7 +364,7 @@ export function SubmissionCreateScreen() {
           <InfoNote
             icon={Paperclip}
             tone="neutral"
-            body="Lampiran hanya diwajibkan untuk cuti sakit. Pada demo ini lampiran berupa nama berkas simulasi."
+            body="Lampiran hanya diwajibkan untuk cuti sakit. Saat ini lampiran hanya berupa nama berkas; unggah file belum tersedia."
           />
         )}
       </Card>
@@ -386,7 +386,7 @@ export function SubmissionCreateScreen() {
         style={{ marginTop: spacing.md }}
         icon={ShieldCheck}
         tone="neutral"
-        body={`Pengajuan dikirim atas nama ${user.name} (${role?.name ?? 'Karyawan'}). Data tersimpan pada mock state dan hilang saat aplikasi ditutup.`}
+        body={`Pengajuan dikirim atas nama ${user.name} (${role?.name ?? 'Karyawan'}). Data tersimpan di server dan tetap ada setelah aplikasi ditutup.`}
       />
 
       {type === 'RESIGN' ? (

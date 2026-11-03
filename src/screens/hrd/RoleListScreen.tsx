@@ -179,7 +179,7 @@ export function RoleListScreen() {
         icon={InfoIcon}
         tone="neutral"
         title="Role menentukan perilaku absensi"
-        body="Jam masuk, jam pulang, dan toleransi pada role dipakai untuk menghitung keterlambatan. Komponen gaji dipakai pada rekap payroll simulasi."
+        body="Jam masuk, jam pulang, dan toleransi pada role dipakai untuk menghitung keterlambatan. Komponen gaji dipakai pada rekap rekap payroll."
       />
     </Screen>
   );

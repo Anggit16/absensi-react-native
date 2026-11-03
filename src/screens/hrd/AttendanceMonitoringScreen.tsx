@@ -27,7 +27,7 @@ import { SectionHeader } from '../../components/common/Section';
 import { StatCard } from '../../components/common/StatCard';
 import { AttendanceRow } from '../../components/attendance/AttendanceRow';
 import { useApp, useSessionUser } from '../../store/AppProvider';
-import { colors, radius, spacing } from '../../theme';
+import { colors, spacing } from '../../theme';
 import { formatDateLong, todayISO } from '../../utils/date';
 import { summaryFromAttendance } from '../../utils/payroll';
 import type { AttendanceStatus } from '../../types';
@@ -150,7 +150,7 @@ export function AttendanceMonitoringScreen({ showBack = false }: { showBack?: bo
           </View>
         </View>
         <View style={styles.heroBadges}>
-          <Badge label={isToday ? 'Data live mock' : 'Arsip mock'} tone="dark" />
+          <Badge label={isToday ? 'Live' : 'Arsip'} tone="dark" />
           <Badge label={`${summary.total} catatan`} tone="dark" />
         </View>
       </Card>
@@ -316,7 +316,7 @@ export function AttendanceMonitoringScreen({ showBack = false }: { showBack?: bo
           icon={AlertTriangle}
           tone="warning"
           title={`${summary.absent} karyawan tercatat absen`}
-          body="Status absen dihasilkan dari data mock. Tindak lanjut (surat peringatan, potongan) belum diotomasi pada fase frontend."
+          body="Status absen dihasilkan dari server. Tindak lanjut (surat peringatan, potongan) belum diotomasi."
         />
       ) : null}
 
@@ -325,7 +325,7 @@ export function AttendanceMonitoringScreen({ showBack = false }: { showBack?: bo
         icon={Info}
         tone="neutral"
         title="Tentang monitoring"
-        body="Data monitoring berasal dari absensi simulasi yang sama dengan yang dilihat karyawan. GPS, selfie, dan waktu belum diverifikasi server."
+        body="Data monitoring berasal dari absensi yang tersimpan di server. GPS, selfie, dan waktu divalidasi di server."
       />
     </Screen>
   );

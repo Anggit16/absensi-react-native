@@ -5,6 +5,7 @@ import {
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { colors } from '../theme';
 import { useApp } from '../store/AppProvider';
 import { RoleTabs } from './Tabs';
@@ -60,7 +61,15 @@ const screenOptions = {
 };
 
 export function RootNavigator() {
-  const { sessionUser } = useApp();
+  const { sessionUser, isRestoring } = useApp();
+
+  if (isRestoring) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator color={colors.primary} size="large" />
+      </View>
+    );
+  }
 
   return (
     <NavigationContainer theme={navigationTheme}>
@@ -111,3 +120,12 @@ export function RootNavigator() {
     </NavigationContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  loading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background,
+  },
+});

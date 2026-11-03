@@ -26,7 +26,7 @@ export function LocationFormScreen() {
   const navigation = useAppNavigation();
   const user = useSessionUser();
   const { showToast } = useToast();
-  const { locations, roles, users, getLocation, saveLocation, deleteLocation } = useApp();
+  const { roles, users, getLocation, saveLocation, deleteLocation } = useApp();
 
   const editing = getLocation(route.params?.locationId);
   const isEdit = Boolean(editing);
@@ -64,7 +64,7 @@ export function LocationFormScreen() {
     setErrors((previous) => ({ ...previous, [key]: '' }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const latitude = Number(form.latitude.replace(',', '.'));
     const longitude = Number(form.longitude.replace(',', '.'));
     const radius = Number(form.radiusMeters.replace(/[^\d]/g, ''));
@@ -87,7 +87,7 @@ export function LocationFormScreen() {
       return;
     }
 
-    const result = saveLocation({
+    const result = await saveLocation({
       id: editing?.id,
       name: form.name,
       type: form.type,
@@ -173,7 +173,7 @@ export function LocationFormScreen() {
         />
       </Card>
 
-      <SectionHeader title="Koordinat & radius" subtitle="Dipakai untuk simulasi geofencing" />
+      <SectionHeader title="Koordinat & radius" subtitle="Dipakai untuk validasi geofencing" />
       <Card style={styles.formCard}>
         <View style={styles.twoCol}>
           <TextField
@@ -202,7 +202,7 @@ export function LocationFormScreen() {
           keyboardType="number-pad"
           prefix="±"
           error={errors.radiusMeters}
-          helper="Batas 20–5000 meter. Absensi di luar radius akan ditolak pada simulasi."
+          helper="Batas 20–5000 meter. Absensi di luar radius akan ditolak oleh server."
           required
         />
         <View style={styles.radiusPreview}>
@@ -210,12 +210,12 @@ export function LocationFormScreen() {
             <Crosshair size={18} color={colors.infoDark} strokeWidth={2} />
           </View>
           <View style={{ flex: 1 }}>
-            <AppText variant="smallStrong">Radius simulasi {form.radiusMeters || 0} m</AppText>
+            <AppText variant="smallStrong">Radius {form.radiusMeters || 0} m</AppText>
             <AppText variant="caption">
               Titik pusat {form.latitude || '—'}, {form.longitude || '—'}
             </AppText>
           </View>
-          <Badge label="Simulasi" tone="info" />
+          <Badge label="Geofencing" tone="info" />
         </View>
       </Card>
 
@@ -258,18 +258,18 @@ export function LocationFormScreen() {
         style={{ marginTop: spacing.md }}
         icon={Info}
         tone="warning"
-        body="Nilai koordinat dan radius hanya dipakai untuk simulasi. Aplikasi belum memanggil GPS asli atau memvalidasi lokasi perangkat."
+        body="Nilai koordinat dan radius dipakai untuk validasi geofencing. GPS perangkat dibaca aplikasi dan jarak dihitung ulang di server."
       />
 
       <ConfirmDialog
         visible={confirmDelete}
         title="Hapus lokasi?"
-        message={`Lokasi ${editing?.name ?? ''} akan dihapus dari master data mock.`}
+        message={`Lokasi ${editing?.name ?? ''} akan dihapus dari master data.`}
         confirmLabel="Ya, hapus"
         tone="danger"
-        onConfirm={() => {
+        onConfirm={async () => {
           if (!editing) return;
-          const result = deleteLocation(editing.id);
+          const result = await deleteLocation(editing.id);
           setConfirmDelete(false);
           if (result.ok) {
             showToast(result.message, 'success');

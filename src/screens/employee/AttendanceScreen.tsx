@@ -1,3 +1,5 @@
+import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import {
   AlertTriangle,
   Camera,
@@ -12,8 +14,8 @@ import {
   Timer,
   XCircle,
 } from 'lucide-react-native';
-import React, { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Switch, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Image, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { AppText } from '../../components/common/AppText';
 import { Badge, AttendanceStatusBadge } from '../../components/common/Badge';
 import { Button } from '../../components/common/Button';
@@ -23,69 +25,199 @@ import { ScreenHeader } from '../../components/common/Header';
 import { ConfirmDialog } from '../../components/common/Modal';
 import { Screen } from '../../components/common/Screen';
 import { DetailRow, Divider, SectionHeader } from '../../components/common/Section';
-import { SelectField } from '../../components/common/SelectField';
 import { useToast } from '../../components/common/Toast';
 import { useApp, useSessionUser } from '../../store/AppProvider';
 import { colors, radius, spacing } from '../../theme';
 import { formatDateLong, formatTimeFromISO, nowTime, todayISO } from '../../utils/date';
+import { distanceMeters } from '../../utils/geo';
 import { useAppNavigation } from '../../navigation/types';
+
+type LocationStatus = 'loading' | 'ready' | 'denied' | 'error';
+
+interface DeviceCoords {
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  mocked: boolean;
+}
+
+interface SelfieFile {
+  uri: string;
+  name: string;
+  type: string;
+}
 
 export function AttendanceScreen() {
   const user = useSessionUser();
   const navigation = useAppNavigation();
   const { showToast } = useToast();
-  const { locations, attendances, checkAttendance, getRoleForUser, getLocationForUser, company } = useApp();
+  const { attendances, checkAttendance, getRoleForUser, getLocationForUser, company } = useApp();
 
   const role = getRoleForUser(user);
-  const defaultLocation = getLocationForUser(user);
+  const location = getLocationForUser(user);
   const today = todayISO();
 
-  const [locationId, setLocationId] = useState(defaultLocation?.id ?? locations[0]?.id ?? '');
-  const [outsideRadius, setOutsideRadius] = useState(false);
-  const [selfieCaptured, setSelfieCaptured] = useState(false);
+  const [coords, setCoords] = useState<DeviceCoords | null>(null);
+  const [locationStatus, setLocationStatus] = useState<LocationStatus>('loading');
+  const [locationMessage, setLocationMessage] = useState('');
+  const [selfie, setSelfie] = useState<SelfieFile | null>(null);
+  const [selfieAt, setSelfieAt] = useState<string | null>(null);
+  const [isCapturing, setIsCapturing] = useState(false);
   const [confirmMode, setConfirmMode] = useState<'CHECK_IN' | 'CHECK_OUT' | null>(null);
-
-  const location = locations.find((item) => item.id === locationId) ?? defaultLocation;
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const record = attendances.find(
     (item) => item.userId === user.id && item.date === today,
   );
 
-  const simulatedDistance = useMemo(() => {
-    if (!location) return 0;
-    return outsideRadius ? location.radiusMeters + 275 : Math.max(12, Math.round(location.radiusMeters * 0.18));
-  }, [location, outsideRadius]);
+  const refreshLocation = useCallback(async () => {
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
 
-  const withinRadius = !!location && simulatedDistance <= location.radiusMeters;
+      setLocationMessage('');
+
+      if (permission.status !== 'granted') {
+        setLocationStatus('denied');
+        setLocationMessage(
+          'Izin lokasi ditolak. Aktifkan izin lokasi AbsensiPro di pengaturan perangkat untuk melakukan absensi.',
+        );
+        return;
+      }
+
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+
+      setCoords({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy ?? null,
+        mocked: position.mocked === true,
+      });
+      setLocationStatus('ready');
+    } catch (error) {
+      setCoords(null);
+      setLocationStatus('error');
+      setLocationMessage(
+        error instanceof Error
+          ? `Gagal membaca lokasi: ${error.message}`
+          : 'Gagal membaca lokasi perangkat.',
+      );
+    }
+  }, [setCoords, setLocationMessage, setLocationStatus]);
+
+  useEffect(() => {
+    // Pemuatan awal lokasi adalah sinkronisasi dengan GPS perangkat, bukan cascading render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshLocation();
+  }, [refreshLocation]);
+
+  const distance = useMemo(() => {
+    if (!coords || !location) return null;
+
+    return distanceMeters(coords, {
+      latitude: location.latitude,
+      longitude: location.longitude,
+    });
+  }, [coords, location]);
+
+  const withinRadius = distance !== null && location ? distance <= location.radiusMeters : false;
+  const isMocked = coords?.mocked === true;
   const mode: 'CHECK_IN' | 'CHECK_OUT' = record?.checkInAt ? 'CHECK_OUT' : 'CHECK_IN';
   const alreadyDone = mode === 'CHECK_OUT' && !!record?.checkOutAt;
+  const gpsValid = locationStatus === 'ready' && !!coords && !isMocked;
 
-  const canSubmit = !!location && withinRadius && selfieCaptured && !alreadyDone;
+  const canSubmit =
+    !!location && gpsValid && withinRadius && !!selfie && !alreadyDone && !isSubmitting;
 
-  const submit = () => {
-    if (!location) {
-      showToast('Pilih lokasi kerja terlebih dahulu.', 'error');
+  const takeSelfie = async () => {
+    setIsCapturing(true);
+
+    try {
+      if (Platform.OS !== 'web') {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+
+        if (!permission.granted) {
+          showToast(
+            'Izin kamera diperlukan untuk selfie absensi.',
+            'error',
+            'Kamera tidak diizinkan',
+          );
+          return;
+        }
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        cameraType: ImagePicker.CameraType.front,
+        quality: 0.6,
+        allowsEditing: false,
+      });
+
+      if (result.canceled || result.assets.length === 0) return;
+
+      const asset = result.assets[0];
+
+      setSelfie({
+        uri: asset.uri,
+        name: asset.fileName ?? `selfie-${Date.now()}.jpg`,
+        type: asset.mimeType ?? 'image/jpeg',
+      });
+      setSelfieAt(nowTime());
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : 'Kamera gagal dibuka.',
+        'error',
+        'Gagal mengambil selfie',
+      );
+    } finally {
+      setIsCapturing(false);
+    }
+  };
+
+  const submit = async () => {
+    if (!location || !coords || distance === null || !selfie) {
+      showToast('Lengkapi lokasi dan selfie terlebih dahulu.', 'error');
+      setConfirmMode(null);
       return;
     }
-    const result = checkAttendance({
+
+    setIsSubmitting(true);
+
+    const result = await checkAttendance({
       userId: user.id,
       mode,
       locationId: location.id,
       locationName: location.name,
-      latitude: location.latitude,
-      longitude: location.longitude,
-      distanceMeters: simulatedDistance,
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+      distanceMeters: distance,
       withinRadius,
-      selfieCaptured,
+      selfieCaptured: true,
+      selfie,
     });
+
+    setIsSubmitting(false);
     setConfirmMode(null);
+
     if (result.ok) {
-      setSelfieCaptured(false);
-      showToast(result.message, 'success', mode === 'CHECK_IN' ? 'Absen masuk berhasil' : 'Absen pulang berhasil');
+      setSelfie(null);
+      setSelfieAt(null);
+      showToast(
+        result.message,
+        'success',
+        mode === 'CHECK_IN' ? 'Absen masuk berhasil' : 'Absen pulang berhasil',
+      );
     } else {
       showToast(result.message, 'error');
     }
   };
+
+  const gpsTone = isMocked || locationStatus === 'denied' || locationStatus === 'error'
+    ? 'danger'
+    : withinRadius
+      ? 'success'
+      : 'warning';
 
   return (
     <Screen
@@ -139,126 +271,163 @@ export function AttendanceScreen() {
             <View style={{ flex: 1, gap: 2 }}>
               <AppText variant="bodyStrong">Catatan absensi hari ini</AppText>
               <AppText variant="caption">
-                {record.locationName ?? 'Lokasi tidak tercatat'} · simulasi {record.distanceMeters ?? 0} m dari titik
+                {record.locationName ?? 'Lokasi tidak tercatat'}
+                {record.distanceMeters !== undefined ? ` · ${record.distanceMeters} m dari titik kantor` : ''}
               </AppText>
             </View>
             <AttendanceStatusBadge status={record.status} />
           </View>
-          {record.selfieCaptured ? (
+          {record.selfieCaptured || record.checkOutSelfieCaptured ? (
             <View style={styles.selfieStored}>
               <ShieldCheck size={13} color={colors.accentDark} strokeWidth={2.2} />
               <AppText variant="caption" style={{ color: colors.accentDark }}>
-                Selfie simulasi tercatat (bukan biometrik)
+                Selfie absensi tersimpan di server (bukan biometrik)
               </AppText>
             </View>
           ) : null}
         </Card>
       ) : null}
 
-      <SectionHeader title="1. Lokasi absensi" subtitle="Pilih titik kerja dan simulasikan posisi GPS" />
+      <SectionHeader
+        title="1. Lokasi & geofence"
+        subtitle="Koordinat dibaca dari GPS perangkat, lalu divalidasi ulang di server"
+      />
       <Card style={styles.sectionCard}>
-        <SelectField
-          label="Lokasi kerja"
-          value={location?.id}
-          options={locations.map((item) => ({
-            value: item.id,
-            label: item.name,
-            description: `${item.address} · radius ${item.radiusMeters} m`,
-          }))}
-          onChange={(value) => setLocationId(value)}
-          helper={
-            defaultLocation
-              ? `Lokasi default role Anda: ${defaultLocation.name}`
-              : 'Role Anda belum memiliki lokasi default.'
-          }
-        />
-
-        <View style={styles.simRow}>
-          <View style={{ flex: 1 }}>
-            <AppText variant="smallStrong">Simulasikan di luar radius</AppText>
+        <View style={styles.assigned}>
+          <View style={styles.assignedIcon}>
+            <MapPin size={16} color={colors.primary} strokeWidth={2.2} />
+          </View>
+          <View style={{ flex: 1, gap: 2 }}>
+            <AppText variant="smallStrong">
+              {location?.name ?? 'Lokasi kerja belum diatur'}
+            </AppText>
             <AppText variant="caption">
-              Untuk menguji penolakan absensi saat posisi di luar geofencing.
+              {location
+                ? `${location.address} · radius ${location.radiusMeters} m`
+                : 'Hubungi Admin/HRD untuk menetapkan lokasi kerja Anda.'}
             </AppText>
           </View>
-          <Switch
-            value={outsideRadius}
-            onValueChange={setOutsideRadius}
-            trackColor={{ false: colors.borderStrong, true: colors.warning }}
-            thumbColor={colors.white}
-            accessibilityLabel="Simulasikan posisi di luar radius"
-          />
         </View>
 
         <View
           style={[
             styles.gpsBox,
-            { backgroundColor: withinRadius ? colors.accentSubtle : colors.dangerSoft, borderColor: withinRadius ? colors.accentSoft : '#FECACA' },
+            {
+              backgroundColor:
+                gpsTone === 'success'
+                  ? colors.accentSubtle
+                  : gpsTone === 'warning'
+                    ? colors.warningSoft
+                    : colors.dangerSoft,
+              borderColor:
+                gpsTone === 'success'
+                  ? colors.accentSoft
+                  : gpsTone === 'warning'
+                    ? '#FDE68A'
+                    : '#FECACA',
+            },
           ]}
         >
           <View style={styles.gpsHeader}>
             <View style={styles.gpsIcon}>
               <Navigation
                 size={17}
-                color={withinRadius ? colors.accentDark : colors.dangerDark}
+                color={gpsTone === 'success' ? colors.accentDark : colors.dangerDark}
                 strokeWidth={2.2}
               />
             </View>
             <View style={{ flex: 1 }}>
-              <AppText variant="smallStrong" color={withinRadius ? colors.accentDark : colors.dangerDark}>
-                {withinRadius ? 'Dalam radius geofencing' : 'Di luar radius geofencing'}
+              <AppText
+                variant="smallStrong"
+                color={gpsTone === 'success' ? colors.accentDark : colors.dangerDark}
+              >
+                {locationStatus === 'loading'
+                  ? 'Membaca lokasi perangkat…'
+                  : locationStatus === 'denied'
+                    ? 'Izin lokasi belum diberikan'
+                    : locationStatus === 'error'
+                      ? 'Lokasi tidak tersedia'
+                      : isMocked
+                        ? 'Mock location terdeteksi'
+                        : withinRadius
+                          ? 'Dalam radius geofencing'
+                          : 'Di luar radius geofencing'}
               </AppText>
-              <AppText variant="caption" style={{ color: withinRadius ? colors.accentDark : colors.dangerDark }}>
-                Jarak simulasi {simulatedDistance} m · batas {location?.radiusMeters ?? 0} m
+              <AppText
+                variant="caption"
+                style={{ color: gpsTone === 'success' ? colors.accentDark : colors.dangerDark }}
+              >
+                {locationStatus === 'ready' && distance !== null
+                  ? `Jarak GPS ${distance} m · batas ${location?.radiusMeters ?? 0} m`
+                  : (locationMessage || 'Menunggu koordinat GPS…')}
               </AppText>
             </View>
-            <Badge label={withinRadius ? 'Valid' : 'Ditolak'} tone={withinRadius ? 'success' : 'danger'} />
+            <Badge
+              label={
+                locationStatus === 'loading'
+                  ? 'Memuat'
+                  : locationStatus === 'ready' && !isMocked && withinRadius
+                    ? 'Valid'
+                    : 'Ditolak'
+              }
+              tone={gpsTone}
+            />
           </View>
           <View style={styles.gpsMeta}>
             <AppText variant="caption" style={styles.gpsMetaText}>
-              {location ? `${location.latitude}, ${location.longitude}` : 'Koordinat belum tersedia'}
+              {coords
+                ? `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}${
+                    coords.accuracy !== null ? ` · ±${Math.round(coords.accuracy)} m` : ''
+                  }`
+                : 'Koordinat belum tersedia'}
             </AppText>
             <AppText variant="caption" style={styles.gpsMetaText}>
-              Mode: simulasi
+              {isMocked ? 'Sumber: mock provider' : 'Sumber: GPS perangkat'}
             </AppText>
           </View>
         </View>
 
+        <Button
+          label={locationStatus === 'loading' ? 'Membaca lokasi…' : 'Perbarui lokasi'}
+          variant="outline"
+          icon={Navigation}
+          disabled={locationStatus === 'loading'}
+          onPress={() => {
+            setLocationStatus('loading');
+            void refreshLocation();
+          }}
+        />
+
         <InfoNote
           icon={Info}
           tone="neutral"
-          body="Aplikasi ini tidak membaca GPS asli dan tidak memverifikasi fake GPS. Nilai jarak di atas dihasilkan dari simulasi untuk menguji aturan radius."
+          body="Jarak dihitung ulang di server memakai koordinat tugas Anda. Absensi di luar radius akan ditolak. Deteksi mock location bergantung pada dukungan platform."
         />
       </Card>
 
-      <SectionHeader title="2. Selfie simulasi" subtitle="Wajib diambil sebelum absen" />
+      <SectionHeader title="2. Selfie kamera" subtitle="Wajib diambil langsung dari kamera" />
       <Card style={styles.sectionCard}>
         <Pressable
-          onPress={() => setSelfieCaptured((value) => !value)}
+          onPress={() => void takeSelfie()}
+          disabled={isCapturing}
           accessibilityRole="button"
-          accessibilityLabel={selfieCaptured ? 'Hapus selfie simulasi' : 'Ambil selfie simulasi'}
+          accessibilityLabel={selfie ? 'Ambil ulang selfie' : 'Ambil selfie'}
           style={({ pressed }) => [
             styles.selfieBox,
-            selfieCaptured && styles.selfieBoxActive,
-            { opacity: pressed ? 0.8 : 1 },
+            selfie && styles.selfieBoxActive,
+            { opacity: pressed || isCapturing ? 0.8 : 1 },
           ]}
         >
-          {selfieCaptured ? (
+          {selfie ? (
             <>
-              <View style={styles.selfiePreview}>
-                <AppText style={styles.selfieInitials}>
-                  {user.name
-                    .split(' ')
-                    .map((part) => part[0])
-                    .slice(0, 2)
-                    .join('')
-                    .toUpperCase()}
-                </AppText>
-              </View>
+              <Image source={{ uri: selfie.uri }} style={styles.selfieThumb} />
               <View style={{ flex: 1, gap: 2 }}>
                 <AppText variant="bodyStrong" color={colors.accentDark}>
-                  Selfie simulasi siap
+                  Selfie siap diunggah
                 </AppText>
-                <AppText variant="caption">Diambil pukul {nowTime()} · data tidak disimpan ke server</AppText>
+                <AppText variant="caption">
+                  Diambil pukul {selfieAt ?? nowTime()} · dikirim bersama absensi
+                </AppText>
               </View>
               <RotateCcw size={16} color={colors.accentDark} strokeWidth={2.2} />
             </>
@@ -268,9 +437,11 @@ export function AttendanceScreen() {
                 <Camera size={22} color={colors.textMuted} strokeWidth={1.9} />
               </View>
               <View style={{ flex: 1, gap: 2 }}>
-                <AppText variant="bodyStrong">Ambil selfie simulasi</AppText>
+                <AppText variant="bodyStrong">
+                  {isCapturing ? 'Membuka kamera…' : 'Ambil selfie'}
+                </AppText>
                 <AppText variant="caption">
-                  Ketuk untuk menandai selfie sudah diambil. Kamera asli tidak digunakan.
+                  Kamera depan dipakai langsung; memilih dari galeri tidak tersedia.
                 </AppText>
               </View>
             </>
@@ -279,7 +450,7 @@ export function AttendanceScreen() {
         <InfoNote
           icon={AlertTriangle}
           tone="warning"
-          body="Tidak ada verifikasi wajah, liveness detection, atau penyimpanan foto pada fase frontend ini."
+          body="Belum ada pencocokan wajah atau liveness detection. Foto disimpan di server dan hanya dapat diakses pemilik, HRD, dan Owner."
         />
       </Card>
 
@@ -287,21 +458,23 @@ export function AttendanceScreen() {
       <Card style={styles.sectionCard}>
         <DetailRow label="Karyawan" value={user.name} />
         <DetailRow label="Role kerja" value={role?.name ?? 'Belum diatur'} />
-        <DetailRow label="Lokasi dipilih" value={location?.name ?? '—'} />
+        <DetailRow label="Lokasi kerja" value={location?.name ?? '—'} />
         <DetailRow
-          label="Jarak simulasi"
-          value={`${simulatedDistance} m`}
+          label="Jarak GPS"
+          value={distance !== null ? `${distance} m` : 'Belum tersedia'}
           valueColor={withinRadius ? colors.text : colors.dangerDark}
         />
         <DetailRow
           label="Selfie"
-          value={selfieCaptured ? 'Sudah diambil' : 'Belum diambil'}
-          valueColor={selfieCaptured ? colors.accentDark : colors.warningDark}
+          value={selfie ? 'Siap diunggah' : 'Belum diambil'}
+          valueColor={selfie ? colors.accentDark : colors.warningDark}
         />
         <Divider />
         <View style={styles.checks}>
+          <CheckItem label="Izin & koordinat GPS tersedia" ok={gpsValid} />
+          <CheckItem label="Bukan mock location" ok={!!coords && !isMocked} />
           <CheckItem label="Dalam radius lokasi" ok={withinRadius} />
-          <CheckItem label="Selfie simulasi tersedia" ok={selfieCaptured} />
+          <CheckItem label="Selfie kamera tersedia" ok={!!selfie} />
           <CheckItem
             label={mode === 'CHECK_IN' ? 'Belum absen masuk' : 'Sudah absen masuk'}
             ok={mode === 'CHECK_IN' ? !record?.checkInAt : !!record?.checkInAt}
@@ -313,18 +486,20 @@ export function AttendanceScreen() {
           label={
             alreadyDone
               ? 'Absensi hari ini selesai'
-              : mode === 'CHECK_IN'
-                ? 'Absen masuk'
-                : 'Absen pulang'
+              : isSubmitting
+                ? 'Mengirim…'
+                : mode === 'CHECK_IN'
+                  ? 'Absen masuk'
+                  : 'Absen pulang'
           }
-          icon={alreadyDone ? CheckCircle2 : mode === 'CHECK_IN' ? FingerprintIcon : Timer}
+          icon={alreadyDone ? CheckCircle2 : mode === 'CHECK_IN' ? ScanFace : Timer}
           variant={alreadyDone ? 'secondary' : 'success'}
           disabled={!canSubmit || alreadyDone}
           onPress={() => setConfirmMode(mode)}
         />
         {!canSubmit && !alreadyDone ? (
           <AppText variant="caption" align="center" style={{ color: colors.dangerDark }}>
-            Lengkapi lokasi valid dan selfie simulasi untuk melanjutkan.
+            Lengkapi GPS valid, radius lokasi, dan selfie kamera untuk melanjutkan.
           </AppText>
         ) : null}
       </Card>
@@ -340,8 +515,8 @@ export function AttendanceScreen() {
         style={{ marginTop: spacing.md }}
         icon={Info}
         tone="neutral"
-        title="Batas simulasi"
-        body="Absen masuk/pulang dihitung memakai jam perangkat dan disimpan pada mock state. Belum ada sinkronisasi server, anti fake GPS, atau validasi biometrik."
+        title="Batas implementasi"
+        body="Jam absensi resmi memakai waktu server. Deteksi mock location bergantung pada dukungan platform. Pencocokan biometrik/liveness belum termasuk cakupan. Pada build web, kamera memakai input file sebagai fallback pengembangan."
       />
 
       <ConfirmDialog
@@ -349,12 +524,12 @@ export function AttendanceScreen() {
         title={confirmMode === 'CHECK_IN' ? 'Kirim absen masuk?' : 'Kirim absen pulang?'}
         message={
           confirmMode === 'CHECK_IN'
-            ? `Absensi akan dicatat pada ${location?.name ?? 'lokasi terpilih'} dengan jarak simulasi ${simulatedDistance} m.`
-            : 'Absen pulang akan dicatat pada waktu perangkat saat ini.'
+            ? `Absensi dicatat pada ${location?.name ?? 'lokasi kerja'} dengan jarak GPS ${distance ?? 0} m dan selfie kamera.`
+            : `Absen pulang dicatat dengan jarak GPS ${distance ?? 0} m dan selfie kamera.`
         }
         confirmLabel={confirmMode === 'CHECK_IN' ? 'Ya, absen masuk' : 'Ya, absen pulang'}
         tone="success"
-        onConfirm={submit}
+        onConfirm={() => void submit()}
         onCancel={() => setConfirmMode(null)}
       />
 
@@ -363,7 +538,7 @@ export function AttendanceScreen() {
           style={{ marginTop: spacing.sm }}
           icon={XCircle}
           tone="warning"
-          body={`Absen masuk hari ini tercatat ${record.checkInAt} dan terlambat ${record.lateMinutes} menit. Denda keterlambatan akan masuk ke rekap payroll demo.`}
+          body={`Absen masuk hari ini tercatat ${record.checkInAt} dan terlambat ${record.lateMinutes} menit. Denda keterlambatan masuk ke rekap payroll.`}
         />
       ) : null}
       {record?.checkOutAt ? (
@@ -392,8 +567,6 @@ function CheckItem({ label, ok }: { label: string; ok: boolean }) {
     </View>
   );
 }
-
-const FingerprintIcon = ScanFace;
 
 const styles = StyleSheet.create({
   hero: { gap: spacing.md },
@@ -425,7 +598,15 @@ const styles = StyleSheet.create({
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   selfieStored: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   sectionCard: { gap: spacing.md },
-  simRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  assigned: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  assignedIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.surfaceMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   gpsBox: { borderWidth: 1, borderRadius: radius.md, padding: spacing.md, gap: spacing.sm },
   gpsHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   gpsIcon: {
@@ -442,8 +623,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(15,23,42,0.08)',
     paddingTop: spacing.sm,
+    gap: spacing.sm,
   },
-  gpsMetaText: { fontSize: 10.5 },
+  gpsMetaText: { fontSize: 10.5, flexShrink: 1 },
   selfieBox: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -468,15 +650,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  selfiePreview: {
-    width: 46,
-    height: 46,
-    borderRadius: radius.md,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  selfieInitials: { fontSize: 16, fontWeight: '700', color: colors.white },
+  selfieThumb: { width: 46, height: 46, borderRadius: radius.md, backgroundColor: colors.surface },
   checks: { gap: spacing.sm },
   checkItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
 });

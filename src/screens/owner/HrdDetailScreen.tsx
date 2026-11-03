@@ -25,11 +25,10 @@ import { useToast } from '../../components/common/Toast';
 import { useApp, useSessionUser } from '../../store/AppProvider';
 import { colors, spacing } from '../../theme';
 import { EMPLOYMENT_TYPE_LABEL } from '../../constants';
-import { formatDate, formatDateTime } from '../../utils/date';
+import { formatDate, formatDateTime , currentPeriod } from '../../utils/date';
 import { formatCurrency } from '../../utils/format';
 import { PayrollBreakdown } from '../shared/PayrollScreen';
 import { computeHrdPayrollRow } from '../../utils/payroll';
-import { currentPeriod } from '../../utils/date';
 import { useAppNavigation, AppParamList } from '../../navigation/types';
 
 export function HrdDetailScreen() {
@@ -78,7 +77,7 @@ export function HrdDetailScreen() {
         <EmptyState
           icon={UserCog}
           title="Akun HRD tidak ditemukan"
-          description="Data mungkin sudah dihapus dari mock state."
+          description="Data mungkin sudah dihapus dari server."
         />
       </Screen>
     );
@@ -157,7 +156,7 @@ export function HrdDetailScreen() {
             <AppText style={styles.payrollEyebrow}>GAJI BULANAN TETAP</AppText>
             <AppText style={styles.payrollValue}>{formatCurrency(payrollRow.grossEarned)}</AppText>
             <AppText style={styles.payrollHint}>
-              Take home simulasi · {company.workDaysPerMonth} hari kerja
+              Take home · {company.workDaysPerMonth} hari kerja
             </AppText>
           </Card>
           <Card style={styles.section}>
@@ -241,7 +240,7 @@ export function HrdDetailScreen() {
           Hapus akun HRD
         </AppText>
         <AppText variant="caption" color={colors.dangerDark} style={{ lineHeight: 16 }}>
-          Akun demo tidak dapat dihapus. Akun HRD lain dapat dihapus beserta komponen gajinya.
+          Akun demo bawaan tidak dapat dihapus. Akun HRD lain dapat dihapus beserta komponen gajinya.
         </AppText>
         <Button
           label="Hapus akun"
@@ -262,8 +261,8 @@ export function HrdDetailScreen() {
         }
         confirmLabel={nextStatus === 'INACTIVE' ? 'Ya, nonaktifkan' : 'Ya, aktifkan'}
         tone={nextStatus === 'INACTIVE' ? 'danger' : 'success'}
-        onConfirm={() => {
-          const result = setUserStatus(hrd.id, nextStatus);
+        onConfirm={async () => {
+          const result = await setUserStatus(hrd.id, nextStatus);
           setConfirmStatus(false);
           showToast(result.message, result.ok ? 'success' : 'error');
         }}
@@ -272,11 +271,11 @@ export function HrdDetailScreen() {
       <ConfirmDialog
         visible={confirmDelete}
         title="Hapus akun HRD?"
-        message={`${hrd.name} akan dihapus dari mock state. Riwayat approval yang sudah tercatat tetap tersimpan pada pengajuan.`}
+        message={`${hrd.name} akan dihapus dari server. Riwayat approval yang sudah tercatat tetap tersimpan pada pengajuan.`}
         confirmLabel="Ya, hapus"
         tone="danger"
-        onConfirm={() => {
-          const result = deleteUser(hrd.id);
+        onConfirm={async () => {
+          const result = await deleteUser(hrd.id);
           setConfirmDelete(false);
           if (result.ok) {
             showToast(result.message, 'success');

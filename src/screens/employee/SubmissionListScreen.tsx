@@ -17,7 +17,7 @@ import { Screen } from '../../components/common/Screen';
 import { FilterChips } from '../../components/common/SegmentedTabs';
 import { SubmissionCard } from '../../components/submissions/SubmissionCard';
 import { useApp, useSessionUser } from '../../store/AppProvider';
-import { colors, radius, spacing } from '../../theme';
+import { colors, spacing } from '../../theme';
 import { useAppNavigation } from '../../navigation/types';
 
 type Filter = 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED';

@@ -1,5 +1,5 @@
 import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react-native';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import { colors, layout, radius, spacing } from '../../theme';
 import { MONTHS_ID, WEEKDAY_INITIALS, buildCalendarMonth, formatDate, todayISO } from '../../utils/date';
@@ -40,11 +40,12 @@ export function DateField({
     month: Number(initial.slice(5, 7)) - 1,
   }));
 
-  useEffect(() => {
-    if (open && value) {
+  const openPicker = () => {
+    if (value) {
       setCursor({ year: Number(value.slice(0, 4)), month: Number(value.slice(5, 7)) - 1 });
     }
-  }, [open, value]);
+    setOpen(true);
+  };
 
   const cells = useMemo(() => buildCalendarMonth(cursor.year, cursor.month), [cursor]);
 
@@ -62,7 +63,7 @@ export function DateField({
         </View>
       ) : null}
       <Pressable
-        onPress={disabled ? undefined : () => setOpen(true)}
+        onPress={disabled ? undefined : openPicker}
         accessibilityRole="button"
         accessibilityLabel={label ?? placeholder}
         accessibilityValue={{ text: value ? formatDate(value) : placeholder }}
@@ -90,7 +91,7 @@ export function DateField({
         visible={open}
         onClose={() => setOpen(false)}
         title={label ?? 'Pilih tanggal'}
-        subtitle="Kalender demo — tanpa sinkronisasi kalender perangkat"
+        subtitle="Kalender aplikasi - tanpa sinkronisasi kalender perangkat"
       >
         <View style={styles.calendar}>
           <View style={styles.calendarHeader}>
